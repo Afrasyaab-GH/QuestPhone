@@ -92,24 +92,66 @@ class AiSnapQuestViewVM @Inject constructor(
         currentStep.value = EvaluationStep.LOADING_MODEL
         val photoFile = java.io.File(application.filesDir, AI_SNAP_PIC)
         val compressedFile = resizeAndCompressImage(photoFile, 1080, 50)
-        client.validateTask(
-            compressedFile,
-            aiQuest.taskDescription,
-            aiQuest.features.joinToString(","),
-            Supabase.supabase.auth.currentAccessTokenOrNull()!!.toString()
-        ) {
-            results.value = it.getOrNull()
-            currentStep.value = EvaluationStep.COMPLETED
-            if(results.value?.isValid == true) {
-                onEvaluationComplete()
+
+        val settingsSp = application.getSharedPreferences("private_settings", android.content.Context.MODE_PRIVATE)
+        val geminiKey = settingsSp.getString("gemini_api_key", null)
+
+        if (!geminiKey.isNullOrBlank()) {
+            val geminiValidator = nethical.questphone.backend.GeminiValidator()
+            geminiValidator.validateTask(
+                compressedFile,
+                aiQuest.taskDescription,
+                aiQuest.features.joinToString(","),
+                geminiKey
+            ) { result ->
+                results.value = result.getOrNull() ?: TaskValidationClient.ValidationResult(
+                    isValid = false,
+                    reason = "Gemini validation failed: ${result.exceptionOrNull()?.message ?: "Unknown error"}"
+                )
+                currentStep.value = EvaluationStep.COMPLETED
+                if (results.value?.isValid == true) {
+                    onEvaluationComplete()
+                }
+            }
+        } else {
+            val token = if (userRepository.userInfo.isAnonymous) {
+                ""
+            } else {
+                Supabase.supabase.auth.currentAccessTokenOrNull()?.toString() ?: ""
+            }
+
+            if (token.isEmpty()) {
+                results.value = TaskValidationClient.ValidationResult(
+                    isValid = false,
+                    reason = "Authentication required. Please configure a private Gemini API Key in your Profile settings to validate quests offline."
+                )
+                currentStep.value = EvaluationStep.COMPLETED
+                return
+            }
+
+            client.validateTask(
+                compressedFile,
+                aiQuest.taskDescription,
+                aiQuest.features.joinToString(","),
+                token
+            ) { result ->
+                results.value = result.getOrNull() ?: TaskValidationClient.ValidationResult(
+                    isValid = false,
+                    reason = "Online validation failed: ${result.exceptionOrNull()?.message ?: "Unknown error"}"
+                )
+                currentStep.value = EvaluationStep.COMPLETED
+                if (results.value?.isValid == true) {
+                    onEvaluationComplete()
+                }
             }
         }
+
         val allSteps = EvaluationStep.entries
         var currentStepInt = 0
-        while(results.value != null){
-            delay(Random.nextInt(500,2000).toLong())
-            currentStep.value = EvaluationStep.valueOf( allSteps[currentStepInt].name)
-            if(currentStepInt != EvaluationStep.EVALUATING.ordinal) currentStepInt++
+        while (results.value == null) {
+            delay(Random.nextInt(500, 2000).toLong())
+            currentStep.value = EvaluationStep.valueOf(allSteps[currentStepInt].name)
+            if (currentStepInt != EvaluationStep.EVALUATING.ordinal) currentStepInt++
         }
 
     }

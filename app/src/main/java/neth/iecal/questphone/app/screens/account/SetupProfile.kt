@@ -116,7 +116,7 @@ class SetupProfileViewModel @Inject constructor(
                         userRepository.userInfo = profile
                         if (profile.has_profile) {
                             _profileUrl.value =
-                                "https://hplszhlnchhfwngbojnc.supabase.co/storage/v1/object/public/profile/$userId/profile"
+                                "${Supabase.url}/storage/v1/object/public/profile/$userId/profile"
                         }
                     } else {
                         userRepository.userInfo.username =

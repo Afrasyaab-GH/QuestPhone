@@ -309,40 +309,38 @@ fun SignUpScreen(viewModel: LoginViewModel, onAnonymousSignInSuccess: () -> Unit
                 }
             }
 
-            if(BuildConfig.IS_FDROID){
-                var isContinueWithoutLoginDialog = remember { mutableStateOf(false) }
-                if (isContinueWithoutLoginDialog.value) {
-                    AlertDialog(
-                        onDismissRequest = { isContinueWithoutLoginDialog.value = false },
-                        title = {
-                            Text(text = "Warning")
-                        },
-                        text = {
-                            Text("If you continue in this mode, you might never be able to access your data again after uninstalling this app.")
-                        },
-                        confirmButton = {
-                            TextButton(onClick = {
-                                isContinueWithoutLoginDialog.value = false
-                                viewModel.signInAnonymously()
-                                onAnonymousSignInSuccess()
-                            }) {
-                                Text("Continue Anyway")
-                            }
-                        },
-                        dismissButton = {
-                            TextButton(onClick = { isContinueWithoutLoginDialog.value = false }) {
-                                Text("Cancel")
-                            }
+            var isContinueWithoutLoginDialog = remember { mutableStateOf(false) }
+            if (isContinueWithoutLoginDialog.value) {
+                AlertDialog(
+                    onDismissRequest = { isContinueWithoutLoginDialog.value = false },
+                    title = {
+                        Text(text = "Warning")
+                    },
+                    text = {
+                        Text("If you continue in this mode, you might never be able to access your data again after uninstalling this app.")
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            isContinueWithoutLoginDialog.value = false
+                            viewModel.signInAnonymously()
+                            onAnonymousSignInSuccess()
+                        }) {
+                            Text("Continue Anyway")
                         }
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("Continue without an account",
-                    textAlign = TextAlign.Center,color = MaterialTheme.colorScheme.primary, modifier = Modifier.clickable{
-                    isContinueWithoutLoginDialog.value = true
-                })
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { isContinueWithoutLoginDialog.value = false }) {
+                            Text("Cancel")
+                        }
+                    }
+                )
             }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("Continue without an account",
+                textAlign = TextAlign.Center,color = MaterialTheme.colorScheme.primary, modifier = Modifier.clickable{
+                isContinueWithoutLoginDialog.value = true
+            })
             Spacer(modifier = Modifier.weight(1f))
         }
     }

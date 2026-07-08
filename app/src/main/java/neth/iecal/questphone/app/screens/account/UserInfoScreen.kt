@@ -88,12 +88,19 @@ import nethical.questphone.data.game.InventoryItem
 import nethical.questphone.data.xpToLevelUp
 import java.io.File
 import javax.inject.Inject
+import neth.iecal.questphone.backed.repositories.QuestRepository
+import neth.iecal.questphone.backed.repositories.StatsRepository
+import neth.iecal.questphone.backed.repositories.AppWidgetConfigDao
+import neth.iecal.questphone.core.utils.BackupManager
 
 
 @HiltViewModel
 class UserInfoViewModel @Inject constructor(
     application: Application,
-    private val userRepository: UserRepository,
+    val userRepository: UserRepository,
+    private val questRepository: QuestRepository,
+    private val statsRepository: StatsRepository,
+    private val widgetConfigDao: AppWidgetConfigDao
 ) : AndroidViewModel(application) {
 
     val userInfo: UserInfo = userRepository.userInfo
@@ -114,6 +121,52 @@ class UserInfoViewModel @Inject constructor(
         triggerProfileSync(application,false)
     }
 
+    fun getGeminiApiKey(): String {
+        val sp = getApplication<Application>().getSharedPreferences("private_settings", Context.MODE_PRIVATE)
+        return sp.getString("gemini_api_key", "") ?: ""
+    }
+
+    fun saveGeminiApiKey(key: String) {
+        val sp = getApplication<Application>().getSharedPreferences("private_settings", Context.MODE_PRIVATE)
+        sp.edit().putString("gemini_api_key", key).apply()
+    }
+
+    fun backupData(onComplete: (String?) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val json = BackupManager.createBackup(
+                    getApplication(),
+                    userRepository,
+                    questRepository,
+                    statsRepository,
+                    widgetConfigDao
+                )
+                withContext(Dispatchers.Main) {
+                    onComplete(json)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    onComplete(null)
+                }
+            }
+        }
+    }
+
+    fun restoreData(backupJson: String, onComplete: (Boolean) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val success = BackupManager.restoreBackup(
+                getApplication(),
+                backupJson,
+                userRepository,
+                questRepository,
+                statsRepository,
+                widgetConfigDao
+            )
+            withContext(Dispatchers.Main) {
+                onComplete(success)
+            }
+        }
+    }
 
     fun logOut(onLoggedOut: () -> Unit) {
         viewModelScope.launch {
@@ -141,6 +194,63 @@ class UserInfoViewModel @Inject constructor(
 fun UserInfoScreen(viewModel: UserInfoViewModel = hiltViewModel(),navController: NavController) {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
+
+    val backupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json"),
+        onResult = { uri ->
+            uri?.let {
+                viewModel.backupData { jsonStr ->
+                    if (jsonStr != null) {
+                        try {
+                            context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                                outputStream.write(jsonStr.toByteArray())
+                            }
+                            Toast.makeText(context, "Backup exported successfully!", Toast.LENGTH_SHORT).show()
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Failed to write backup: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
+                    } else {
+                        Toast.makeText(context, "Backup creation failed", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+    )
+
+    val restoreLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+        onResult = { uri ->
+            uri?.let {
+                try {
+                    val jsonStr = context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                        inputStream.bufferedReader().use { it.readText() }
+                    }
+                    if (jsonStr != null) {
+                        viewModel.restoreData(jsonStr) { success ->
+                            if (success) {
+                                Toast.makeText(context, "Backup restored successfully!", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(context, "Failed to restore backup (invalid format?)", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Failed to read backup: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    )
+
+    var isGeminiKeyDialogVisible by remember { mutableStateOf(false) }
+
+    if (isGeminiKeyDialogVisible) {
+        GeminiKeyDialog(
+            currentKey = viewModel.getGeminiApiKey(),
+            onSave = { viewModel.saveGeminiApiKey(it) },
+            onDismiss = { isGeminiKeyDialogVisible = false }
+        )
+    }
+
     Scaffold(containerColor = LocalCustomTheme.current.getRootColorScheme().surface,
         contentWindowInsets = WindowInsets(0),
         ) { innerPadding ->
@@ -194,15 +304,29 @@ fun UserInfoScreen(viewModel: UserInfoViewModel = hiltViewModel(),navController:
                         })
                     )
                     Spacer(Modifier.size(4.dp))
-                    Menu(viewModel.userInfo.isAnonymous, {
-                        viewModel.logOut {
-                            val intent = Intent(context, OnboardActivity::class.java)
-                            context.startActivity(intent)
-                            (context as Activity).finish()
+                    Menu(
+                        isAnonymous = viewModel.userInfo.isAnonymous,
+                        onLogout = {
+                            viewModel.logOut {
+                                val intent = Intent(context, OnboardActivity::class.java)
+                                context.startActivity(intent)
+                                (context as Activity).finish()
+                            }
+                        },
+                        navController = navController,
+                        onForcePull = {
+                            viewModel.onForcePull()
+                        },
+                        onBackup = {
+                            backupLauncher.launch("questphone_backup.json")
+                        },
+                        onRestore = {
+                            restoreLauncher.launch(arrayOf("application/json"))
+                        },
+                        onConfigureGeminiKey = {
+                            isGeminiKeyDialogVisible = true
                         }
-                    },navController,{
-                        viewModel.onForcePull()
-                    })
+                    )
                 }
                 Spacer(Modifier.size(32.dp))
 
@@ -337,7 +461,15 @@ fun UserInfoScreen(viewModel: UserInfoViewModel = hiltViewModel(),navController:
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun Menu(isAnonymous: Boolean,onLogout: () -> Unit,navController: NavController,onForcePull: ()->Unit ) {
+private fun Menu(
+    isAnonymous: Boolean,
+    onLogout: () -> Unit,
+    navController: NavController,
+    onForcePull: () -> Unit,
+    onBackup: () -> Unit,
+    onRestore: () -> Unit,
+    onConfigureGeminiKey: () -> Unit
+) {
     var expanded by remember { mutableStateOf(false) }
     var isLogoutInfoVisible by remember { mutableStateOf(false) }
 
@@ -358,7 +490,30 @@ private fun Menu(isAnonymous: Boolean,onLogout: () -> Unit,navController: NavCon
             onClick = {
                 isLogoutInfoVisible = true
                 expanded = false
-                // handle click
+            }
+        )
+
+        DropdownMenuItem(
+            text = { Text("Private Gemini API Key") },
+            onClick = {
+                onConfigureGeminiKey()
+                expanded = false
+            }
+        )
+
+        DropdownMenuItem(
+            text = { Text("Export Local Backup") },
+            onClick = {
+                onBackup()
+                expanded = false
+            }
+        )
+
+        DropdownMenuItem(
+            text = { Text("Import Local Backup") },
+            onClick = {
+                onRestore()
+                expanded = false
             }
         )
 
@@ -366,12 +521,14 @@ private fun Menu(isAnonymous: Boolean,onLogout: () -> Unit,navController: NavCon
             text = { Text("Communicate with us") },
             onClick = {
                 navController.navigate(RootRoute.ShowSocials.route)
+                expanded = false
             }
         )
         DropdownMenuItem(
             text = { Text("Donate") },
             onClick = {
                 navController.navigate(RootRoute.ShowSocials.route)
+                expanded = false
             }
         )
 
@@ -379,18 +536,21 @@ private fun Menu(isAnonymous: Boolean,onLogout: () -> Unit,navController: NavCon
             text = { Text("Open Tutorial") },
             onClick = {
                 navController.navigate(RootRoute.ShowTutorials.route)
+                expanded = false
             }
         )
         DropdownMenuItem(
             text = { Text("Share Crash Log") },
             onClick = {
                 shareCrashLog(context)
+                expanded = false
             }
         )
         DropdownMenuItem(
             text = { Text("Force Pull from servers") },
             onClick = {
                 onForcePull()
+                expanded = false
             }
         )
     }
@@ -553,4 +713,48 @@ fun shareCrashLog(context: Context) {
     }
 
     context.startActivity(Intent.createChooser(intent, "Share Crash Log"))
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun GeminiKeyDialog(
+    currentKey: String,
+    onSave: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var keyState by remember { mutableStateOf(currentKey) }
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Gemini API Key") },
+        text = {
+            Column {
+                Text(
+                    "Enter your Google Gemini API Key for private offline AI validations. This key will be stored securely on your device.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+                androidx.compose.material3.OutlinedTextField(
+                    value = keyState,
+                    onValueChange = { keyState = it },
+                    label = { Text("API Key") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                onSave(keyState.trim())
+                onDismiss()
+            }) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }

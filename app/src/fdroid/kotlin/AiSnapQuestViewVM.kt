@@ -29,6 +29,10 @@ import nethical.questphone.data.quest.ai.snap.AiSnap
 import java.io.File
 import java.nio.LongBuffer
 import javax.inject.Inject
+import neth.iecal.questphone.core.Supabase
+import androidx.core.graphics.scale
+import kotlin.random.Random
+import kotlinx.coroutines.delay
 
 
 const val MINIMUM_ZERO_SHOT_THRESHOLD = 0.08
@@ -128,8 +132,78 @@ class AiSnapQuestViewVM @Inject constructor(
             if (!isModelLoaded && !loadModel()) return@launch
             if(!isOnlineInferencing) {
                 runOfflineInference(onEvaluationComplete)
+            } else {
+                runOnlineInference(onEvaluationComplete)
             }
 
+        }
+    }
+
+    private suspend fun runOnlineInference(onEvaluationComplete: () -> Unit) {
+        currentStep.value = EvaluationStep.INITIALIZING
+        currentStep.value = EvaluationStep.LOADING_MODEL
+        val photoFile = java.io.File(application.filesDir, AI_SNAP_PIC)
+        val compressedFile = resizeAndCompressImage(photoFile, 1080, 50)
+
+        val settingsSp = application.getSharedPreferences("private_settings", android.content.Context.MODE_PRIVATE)
+        val geminiKey = settingsSp.getString("gemini_api_key", null)
+
+        if (!geminiKey.isNullOrBlank()) {
+            val geminiValidator = nethical.questphone.backend.GeminiValidator()
+            geminiValidator.validateTask(
+                compressedFile,
+                aiQuest.taskDescription,
+                aiQuest.features.joinToString(","),
+                geminiKey
+            ) { result ->
+                results.value = result.getOrNull() ?: TaskValidationClient.ValidationResult(
+                    isValid = false,
+                    reason = "Gemini validation failed: ${result.exceptionOrNull()?.message ?: "Unknown error"}"
+                )
+                currentStep.value = EvaluationStep.COMPLETED
+                if (results.value?.isValid == true) {
+                    onEvaluationComplete()
+                }
+            }
+        } else {
+            val token = if (userRepository.userInfo.isAnonymous) {
+                ""
+            } else {
+                Supabase.supabase.auth.currentAccessTokenOrNull()?.toString() ?: ""
+            }
+
+            if (token.isEmpty()) {
+                results.value = TaskValidationClient.ValidationResult(
+                    isValid = false,
+                    reason = "Authentication required. Please configure a private Gemini API Key in your Profile settings to validate quests offline."
+                )
+                currentStep.value = EvaluationStep.COMPLETED
+                return
+            }
+
+            client.validateTask(
+                compressedFile,
+                aiQuest.taskDescription,
+                aiQuest.features.joinToString(","),
+                token
+            ) { result ->
+                results.value = result.getOrNull() ?: TaskValidationClient.ValidationResult(
+                    isValid = false,
+                    reason = "Online validation failed: ${result.exceptionOrNull()?.message ?: "Unknown error"}"
+                )
+                currentStep.value = EvaluationStep.COMPLETED
+                if (results.value?.isValid == true) {
+                    onEvaluationComplete()
+                }
+            }
+        }
+
+        val allSteps = EvaluationStep.entries
+        var currentStepInt = 0
+        while (results.value == null) {
+            delay(Random.nextInt(500, 2000).toLong())
+            currentStep.value = EvaluationStep.valueOf(allSteps[currentStepInt].name)
+            if (currentStepInt != EvaluationStep.EVALUATING.ordinal) currentStepInt++
         }
     }
 
@@ -229,4 +303,29 @@ class AiSnapQuestViewVM @Inject constructor(
     }
 
 
+}
+fun resizeAndCompressImage(file: java.io.File, maxSize: Int = 1080, quality: Int = 70): java.io.File {
+    val bitmap = android.graphics.BitmapFactory.decodeFile(file.absolutePath)
+
+    // Maintain aspect ratio
+    val ratio = bitmap.width.toFloat() / bitmap.height.toFloat()
+    val width: Int
+    val height: Int
+    if (ratio > 1) {
+        width = maxSize
+        height = (maxSize / ratio).toInt()
+    } else {
+        height = maxSize
+        width = (maxSize * ratio).toInt()
+    }
+
+    val scaledBitmap = bitmap.scale(width, height)
+
+    val compressedFile = java.io.File(file.parent, "compressed_upload.jpg")
+    val out = java.io.FileOutputStream(compressedFile)
+    scaledBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, quality, out)
+    out.flush()
+    out.close()
+
+    return compressedFile
 }
