@@ -213,7 +213,7 @@ class AiSnapQuestViewVM @Inject constructor(
         results.value = null
     }
 
-    private fun runOfflineInference(onEvaluationComplete: () -> Unit){
+    private suspend fun runOfflineInference(onEvaluationComplete: () -> Unit){
         try {
             currentStep.value = EvaluationStep.INITIALIZING
 
@@ -231,7 +231,7 @@ class AiSnapQuestViewVM @Inject constructor(
 
             currentStep.value = EvaluationStep.PREPROCESSING
 
-            val queries = listOf(aiQuest.taskDescription)
+            val queries = aiQuest.features.ifEmpty { listOf(aiQuest.taskDescription) }
             val processedQueries = queries.map { "$it </s>" }
 
             currentStep.value = EvaluationStep.TOKENIZING
@@ -274,15 +274,38 @@ class AiSnapQuestViewVM @Inject constructor(
 
             val probs = logitsArray.map { 1f / (1f + kotlin.math.exp(-it)) }
             val sorted = queries.mapIndexed { i, q -> q to probs[i] }
-                .sortedByDescending { it.second }
+            val detectedFeatures = sorted.filter { it.second > MINIMUM_ZERO_SHOT_THRESHOLD }.map { it.first }
+
+            // Local Gemini Nano reasoning pipeline integration
+            val localNano = neth.iecal.questphone.core.utils.LocalGeminiNanoValidator(application)
+            if (localNano.isAvailable()) {
+                val nanoResult = localNano.validateTaskLocally(aiQuest.taskDescription, detectedFeatures)
+                results.value = nanoResult
+                currentStep.value = EvaluationStep.COMPLETED
+                if (nanoResult.isValid) {
+                    onEvaluationComplete()
+                }
+                return
+            }
+
+            // Fallback: Default SigLIP verification logic
+            val isSuccess = if (aiQuest.features.isEmpty()) {
+                sorted.isNotEmpty() && sorted[0].second > MINIMUM_ZERO_SHOT_THRESHOLD
+            } else {
+                detectedFeatures.isNotEmpty()
+            }
 
             results.value = TaskValidationClient.ValidationResult(
-                sorted[0].second > MINIMUM_ZERO_SHOT_THRESHOLD,
-                "Result Rate: " + sorted[0].second.toString()
+                isSuccess,
+                if (isSuccess) {
+                    "Detected: " + detectedFeatures.joinToString(", ")
+                } else {
+                    "Validation failed. No matching features detected."
+                }
             )
             currentStep.value = EvaluationStep.COMPLETED
 
-            if (sorted[0].second * 5> MINIMUM_ZERO_SHOT_THRESHOLD) {
+            if (isSuccess) {
                 onEvaluationComplete()
             }
 

@@ -44,7 +44,20 @@ class MyApp : Application() {
             triggerQuestSync(applicationContext)
         }
 
+        scheduleWeeklyBackup()
+
         Thread.setDefaultUncaughtExceptionHandler(CrashLogger(this))
+    }
+
+    private fun scheduleWeeklyBackup() {
+        val workRequest = androidx.work.PeriodicWorkRequestBuilder<neth.iecal.questphone.core.workers.BackupWorker>(
+            7, java.util.concurrent.TimeUnit.DAYS
+        ).build()
+        androidx.work.WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            "weekly_backup",
+            androidx.work.ExistingPeriodicWorkPolicy.KEEP,
+            workRequest
+        )
     }
 
 }

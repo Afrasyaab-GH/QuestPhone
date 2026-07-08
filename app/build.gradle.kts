@@ -130,6 +130,8 @@ dependencies {
 
     ksp(libs.androidx.room.compiler)
 //    implementation (libs.androidx.ui.text.google.fonts)
+    implementation("com.google.ai.edge.aicore:aicore:0.0.1-exp01")
+    implementation("androidx.biometric:biometric:1.2.0-alpha05")
 
     add("playImplementation", platform("com.google.firebase:firebase-bom:34.3.0"))
     add("playImplementation", "com.google.firebase:firebase-messaging")

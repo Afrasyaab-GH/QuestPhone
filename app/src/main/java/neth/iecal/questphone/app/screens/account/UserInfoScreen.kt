@@ -133,7 +133,17 @@ class UserInfoViewModel @Inject constructor(
         sp.edit().putString("gemini_api_key", key).apply()
     }
 
-    fun backupData(onComplete: (String?) -> Unit) {
+    fun getPrivacyModeEnabled(): Boolean {
+        val sp = getApplication<Application>().getSharedPreferences("private_settings", Context.MODE_PRIVATE)
+        return sp.getBoolean("habit_privacy_mode", false)
+    }
+
+    fun savePrivacyModeEnabled(enabled: Boolean) {
+        val sp = getApplication<Application>().getSharedPreferences("private_settings", Context.MODE_PRIVATE)
+        sp.edit().putBoolean("habit_privacy_mode", enabled).apply()
+    }
+
+    fun backupData(password: String? = null, onComplete: (String?) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val json = BackupManager.createBackup(
@@ -141,7 +151,8 @@ class UserInfoViewModel @Inject constructor(
                     userRepository,
                     questRepository,
                     statsRepository,
-                    widgetConfigDao
+                    widgetConfigDao,
+                    password
                 )
                 withContext(Dispatchers.Main) {
                     onComplete(json)
@@ -154,7 +165,7 @@ class UserInfoViewModel @Inject constructor(
         }
     }
 
-    fun restoreData(backupJson: String, onComplete: (Boolean) -> Unit) {
+    fun restoreData(backupJson: String, password: String? = null, onComplete: (Boolean) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
             val success = BackupManager.restoreBackup(
                 getApplication(),
@@ -162,10 +173,27 @@ class UserInfoViewModel @Inject constructor(
                 userRepository,
                 questRepository,
                 statsRepository,
-                widgetConfigDao
+                widgetConfigDao,
+                password
             )
             withContext(Dispatchers.Main) {
                 onComplete(success)
+            }
+        }
+    }
+
+    fun mergeLocalDataToCloud(onComplete: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            try {
+                if (!userRepository.userInfo.isAnonymous) {
+                    neth.iecal.questphone.backed.triggerProfileSync(getApplication(), true)
+                    neth.iecal.questphone.backed.triggerQuestSync(getApplication(), true)
+                    onComplete(true)
+                } else {
+                    onComplete(false)
+                }
+            } catch (e: Exception) {
+                onComplete(false)
             }
         }
     }
@@ -197,24 +225,18 @@ fun UserInfoScreen(viewModel: UserInfoViewModel = hiltViewModel(),navController:
     val context = LocalContext.current
     val scrollState = rememberScrollState()
 
+    var isExportPasswordDialogVisible by remember { mutableStateOf(false) }
+    var isImportPasswordDialogVisible by remember { mutableStateOf(false) }
+    var pendingExportUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    var pendingImportContent by remember { mutableStateOf<String?>(null) }
+    var isPrivacyModeEnabled by remember { mutableStateOf(viewModel.getPrivacyModeEnabled()) }
+
     val backupLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json"),
         onResult = { uri ->
             uri?.let {
-                viewModel.backupData { jsonStr ->
-                    if (jsonStr != null) {
-                        try {
-                            context.contentResolver.openOutputStream(uri)?.use { outputStream ->
-                                outputStream.write(jsonStr.toByteArray())
-                            }
-                            Toast.makeText(context, "Backup exported successfully!", Toast.LENGTH_SHORT).show()
-                        } catch (e: Exception) {
-                            Toast.makeText(context, "Failed to write backup: ${e.message}", Toast.LENGTH_SHORT).show()
-                        }
-                    } else {
-                        Toast.makeText(context, "Backup creation failed", Toast.LENGTH_SHORT).show()
-                    }
-                }
+                pendingExportUri = it
+                isExportPasswordDialogVisible = true
             }
         }
     )
@@ -228,11 +250,17 @@ fun UserInfoScreen(viewModel: UserInfoViewModel = hiltViewModel(),navController:
                         inputStream.bufferedReader().use { it.readText() }
                     }
                     if (jsonStr != null) {
-                        viewModel.restoreData(jsonStr) { success ->
-                            if (success) {
-                                Toast.makeText(context, "Backup restored successfully!", Toast.LENGTH_SHORT).show()
-                            } else {
-                                Toast.makeText(context, "Failed to restore backup (invalid format?)", Toast.LENGTH_SHORT).show()
+                        val isEncrypted = !jsonStr.trim().startsWith("{")
+                        if (isEncrypted) {
+                            pendingImportContent = jsonStr
+                            isImportPasswordDialogVisible = true
+                        } else {
+                            viewModel.restoreData(jsonStr, null) { success ->
+                                if (success) {
+                                    Toast.makeText(context, "Backup restored successfully!", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(context, "Failed to restore backup (invalid format?)", Toast.LENGTH_SHORT).show()
+                                }
                             }
                         }
                     }
@@ -250,6 +278,51 @@ fun UserInfoScreen(viewModel: UserInfoViewModel = hiltViewModel(),navController:
             currentKey = viewModel.getGeminiApiKey(),
             onSave = { viewModel.saveGeminiApiKey(it) },
             onDismiss = { isGeminiKeyDialogVisible = false }
+        )
+    }
+
+    if (isExportPasswordDialogVisible) {
+        BackupPasswordDialog(
+            title = "Export Backup",
+            confirmLabel = "Export",
+            onConfirm = { pwd ->
+                pendingExportUri?.let { uri ->
+                    viewModel.backupData(pwd.ifEmpty { null }) { jsonStr ->
+                        if (jsonStr != null) {
+                            try {
+                                context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                                    outputStream.write(jsonStr.toByteArray())
+                                }
+                                Toast.makeText(context, "Backup exported successfully!", Toast.LENGTH_SHORT).show()
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Failed to write backup: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
+                        } else {
+                            Toast.makeText(context, "Backup creation failed", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            },
+            onDismiss = { isExportPasswordDialogVisible = false }
+        )
+    }
+
+    if (isImportPasswordDialogVisible) {
+        BackupPasswordDialog(
+            title = "Decrypt Backup",
+            confirmLabel = "Decrypt & Restore",
+            onConfirm = { pwd ->
+                pendingImportContent?.let { content ->
+                    viewModel.restoreData(content, pwd.ifEmpty { null }) { success ->
+                        if (success) {
+                            Toast.makeText(context, "Backup restored successfully!", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(context, "Failed to decrypt/restore backup (wrong password?)", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            },
+            onDismiss = { isImportPasswordDialogVisible = false }
         )
     }
 
@@ -308,6 +381,7 @@ fun UserInfoScreen(viewModel: UserInfoViewModel = hiltViewModel(),navController:
                     Spacer(Modifier.size(4.dp))
                     Menu(
                         isAnonymous = viewModel.userInfo.isAnonymous,
+                        navController = navController,
                         onLogout = {
                             viewModel.logOut {
                                 val intent = Intent(context, OnboardActivity::class.java)
@@ -315,7 +389,6 @@ fun UserInfoScreen(viewModel: UserInfoViewModel = hiltViewModel(),navController:
                                 (context as Activity).finish()
                             }
                         },
-                        navController = navController,
                         onForcePull = {
                             viewModel.onForcePull()
                         },
@@ -327,6 +400,21 @@ fun UserInfoScreen(viewModel: UserInfoViewModel = hiltViewModel(),navController:
                         },
                         onConfigureGeminiKey = {
                             isGeminiKeyDialogVisible = true
+                        },
+                        isPrivacyModeEnabled = isPrivacyModeEnabled,
+                        onTogglePrivacyMode = { enabled ->
+                            viewModel.savePrivacyModeEnabled(enabled)
+                            isPrivacyModeEnabled = enabled
+                            Toast.makeText(context, "Habit Privacy Mode: " + if (enabled) "Enabled" else "Disabled", Toast.LENGTH_SHORT).show()
+                        },
+                        onMergeOfflineData = {
+                            viewModel.mergeLocalDataToCloud { success ->
+                                if (success) {
+                                    Toast.makeText(context, "Offline data successfully synced to cloud!", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(context, "Sync failed (check connectivity or account status)", Toast.LENGTH_SHORT).show()
+                                }
+                            }
                         }
                     )
                 }
@@ -465,12 +553,15 @@ fun UserInfoScreen(viewModel: UserInfoViewModel = hiltViewModel(),navController:
 @Composable
 private fun Menu(
     isAnonymous: Boolean,
-    onLogout: () -> Unit,
     navController: NavController,
+    onLogout: () -> Unit,
     onForcePull: () -> Unit,
     onBackup: () -> Unit,
     onRestore: () -> Unit,
-    onConfigureGeminiKey: () -> Unit
+    onConfigureGeminiKey: () -> Unit,
+    isPrivacyModeEnabled: Boolean,
+    onTogglePrivacyMode: (Boolean) -> Unit,
+    onMergeOfflineData: () -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
     var isLogoutInfoVisible by remember { mutableStateOf(false) }
@@ -502,6 +593,39 @@ private fun Menu(
                 expanded = false
             }
         )
+
+        DropdownMenuItem(
+            text = {
+                androidx.compose.foundation.layout.Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Habit Privacy Mode")
+                    androidx.compose.material3.Switch(
+                        checked = isPrivacyModeEnabled,
+                        onCheckedChange = {
+                            onTogglePrivacyMode(it)
+                            expanded = false
+                        }
+                    )
+                }
+            },
+            onClick = {
+                onTogglePrivacyMode(!isPrivacyModeEnabled)
+                expanded = false
+            }
+        )
+
+        if (!isAnonymous) {
+            DropdownMenuItem(
+                text = { Text("Sync Offline Data to Server") },
+                onClick = {
+                    onMergeOfflineData()
+                    expanded = false
+                }
+            )
+        }
 
         DropdownMenuItem(
             text = { Text("Export Local Backup") },
@@ -751,6 +875,49 @@ fun GeminiKeyDialog(
                 onDismiss()
             }) {
                 Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+fun BackupPasswordDialog(
+    title: String,
+    confirmLabel: String,
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var password by remember { mutableStateOf("") }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column {
+                Text(
+                    "Optional: Enter a password to encrypt/decrypt this backup. Leave blank to process as unencrypted.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+                androidx.compose.material3.OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text("Password (Optional)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                onConfirm(password)
+                onDismiss()
+            }) {
+                Text(confirmLabel)
             }
         },
         dismissButton = {

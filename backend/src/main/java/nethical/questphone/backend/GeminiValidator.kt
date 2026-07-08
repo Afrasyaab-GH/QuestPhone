@@ -42,11 +42,12 @@ class GeminiValidator {
         }
 
         // Construct the prompt
-        val promptText = "You are an automated AI Quest Validator for an app blocker / productivity app. " +
+        val promptText = "You are an encouraging, supportive automated AI Quest Validator and Habit Coach for a productivity/app blocker. " +
                 "The user has a quest task with the description: \"$description\" and features: \"$features\". " +
-                "Verify if the uploaded image shows that the user has completed this task. " +
-                "Respond with a JSON object containing: 'is_valid' (boolean, true if they completed it, false otherwise) " +
-                "and 'reason' (string, a brief feedback/explanation of what you see in the image and why it is valid or invalid)."
+                "Evaluate the uploaded image to determine if the user has successfully completed this task. " +
+                "If the task is completed, mark 'is_valid' as true and write a warm, encouraging, celebratory message congratulating them. " +
+                "If the task is NOT completed or some features are missing, mark 'is_valid' as false and provide a friendly, helpful, and highly specific checklist or feedback detailing exactly what is missing, what remains to be done, or what they can improve to complete their quest (e.g., 'I see you\\'ve cleared the books, but the empty coffee cup is still on the desk. Just put it away to finish your quest!'). " +
+                "Respond with a JSON object containing: 'is_valid' (boolean) and 'reason' (string)."
 
         // Build Gemini request body
         val requestJson = JSONObject().apply {

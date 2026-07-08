@@ -2,6 +2,13 @@ package neth.iecal.questphone.core.utils
 
 import android.content.Context
 import android.util.Log
+import android.util.Base64
+import java.security.SecureRandom
+import javax.crypto.Cipher
+import javax.crypto.SecretKeyFactory
+import javax.crypto.spec.IvParameterSpec
+import javax.crypto.spec.PBEKeySpec
+import javax.crypto.spec.SecretKeySpec
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -44,12 +51,57 @@ object BackupManager {
         encodeDefaults = true
     }
 
+    private fun encrypt(plainText: String, password: CharArray): String {
+        val salt = ByteArray(16).apply { SecureRandom().nextBytes(this) }
+        val iv = ByteArray(16).apply { SecureRandom().nextBytes(this) }
+
+        val spec = PBEKeySpec(password, salt, 10000, 256)
+        val factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+        val secretKey = factory.generateSecret(spec)
+        val secretKeySpec = SecretKeySpec(secretKey.encoded, "AES")
+
+        val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
+        cipher.init(Cipher.ENCRYPT_MODE, secretKeySpec, IvParameterSpec(iv))
+        val cipherText = cipher.doFinal(plainText.toByteArray(Charsets.UTF_8))
+
+        // Format: salt (16 bytes) + iv (16 bytes) + ciphertext
+        val combined = ByteArray(salt.size + iv.size + cipherText.size)
+        System.arraycopy(salt, 0, combined, 0, salt.size)
+        System.arraycopy(iv, 0, combined, salt.size, iv.size)
+        System.arraycopy(cipherText, 0, combined, salt.size + iv.size, cipherText.size)
+
+        return Base64.encodeToString(combined, Base64.NO_WRAP)
+    }
+
+    private fun decrypt(combinedBase64: String, password: CharArray): String {
+        val combined = Base64.decode(combinedBase64, Base64.DEFAULT)
+        val salt = ByteArray(16)
+        val iv = ByteArray(16)
+        val cipherText = ByteArray(combined.size - salt.size - iv.size)
+
+        System.arraycopy(combined, 0, salt, 0, salt.size)
+        System.arraycopy(combined, salt.size, iv, 0, iv.size)
+        System.arraycopy(combined, salt.size + iv.size, cipherText, 0, cipherText.size)
+
+        val spec = PBEKeySpec(password, salt, 10000, 256)
+        val factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+        val secretKey = factory.generateSecret(spec)
+        val secretKeySpec = SecretKeySpec(secretKey.encoded, "AES")
+
+        val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
+        cipher.init(Cipher.DECRYPT_MODE, secretKeySpec, IvParameterSpec(iv))
+        val decryptedBytes = cipher.doFinal(cipherText)
+
+        return String(decryptedBytes, Charsets.UTF_8)
+    }
+
     suspend fun createBackup(
         context: Context,
         userRepository: neth.iecal.questphone.backed.repositories.UserRepository,
         questRepository: QuestRepository,
         statsRepository: StatsRepository,
-        widgetConfigDao: AppWidgetConfigDao
+        widgetConfigDao: AppWidgetConfigDao,
+        password: String? = null
     ): String {
         val userInfo = userRepository.userInfo
         val quests = questRepository.getAllQuests().first()
@@ -74,18 +126,35 @@ object BackupManager {
             widgets = widgets
         )
 
-        return jsonSerializer.encodeToString(backupData)
+        val plainJson = jsonSerializer.encodeToString(backupData)
+        return if (!password.isNullOrEmpty()) {
+            encrypt(plainJson, password.toCharArray())
+        } else {
+            plainJson
+        }
     }
 
     suspend fun restoreBackup(
         context: Context,
-        backupJson: String,
+        backupJsonOrCiphertext: String,
         userRepository: neth.iecal.questphone.backed.repositories.UserRepository,
         questRepository: QuestRepository,
         statsRepository: StatsRepository,
-        widgetConfigDao: AppWidgetConfigDao
+        widgetConfigDao: AppWidgetConfigDao,
+        password: String? = null
     ): Boolean {
         return try {
+            val isEncrypted = !backupJsonOrCiphertext.trim().startsWith("{")
+            val backupJson = if (isEncrypted) {
+                if (password.isNullOrEmpty()) {
+                    Log.e(TAG, "Backup is encrypted but no password was provided.")
+                    return false
+                }
+                decrypt(backupJsonOrCiphertext, password.toCharArray())
+            } else {
+                backupJsonOrCiphertext
+            }
+
             val backupData = jsonSerializer.decodeFromString<BackupData>(backupJson)
 
             // 1. Clear current databases

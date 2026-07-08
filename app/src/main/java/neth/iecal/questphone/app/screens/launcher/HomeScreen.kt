@@ -123,6 +123,54 @@ fun HomeScreen(
     val streak by viewModel.currentStreak.collectAsState()
     var isAppSelectorVisible by remember { mutableStateOf(false) }
 
+    val privateSettingsSp = remember { context.getSharedPreferences("private_settings", android.content.Context.MODE_PRIVATE) }
+    var isPrivacyModeEnabled by remember { mutableStateOf(privateSettingsSp.getBoolean("habit_privacy_mode", false)) }
+    var isPrivateQuestsUnlocked by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        isPrivacyModeEnabled = privateSettingsSp.getBoolean("habit_privacy_mode", false)
+    }
+
+    val triggerBiometricUnlock = remember(context) {
+        { onSuccess: () -> Unit ->
+            val activity = context as? androidx.fragment.app.FragmentActivity
+            if (activity != null) {
+                val executor = androidx.core.content.ContextCompat.getMainExecutor(activity)
+                val biometricPrompt = androidx.biometric.BiometricPrompt(
+                    activity,
+                    executor,
+                    object : androidx.biometric.BiometricPrompt.AuthenticationCallback() {
+                        override fun onAuthenticationSucceeded(result: androidx.biometric.BiometricPrompt.AuthenticationResult) {
+                            super.onAuthenticationSucceeded(result)
+                            onSuccess()
+                        }
+
+                        override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                            super.onAuthenticationError(errorCode, errString)
+                        }
+                    }
+                )
+
+                val promptInfo = androidx.biometric.BiometricPrompt.PromptInfo.Builder()
+                    .setTitle("Unlock Private Quests")
+                    .setSubtitle("Authenticate to view and interact with your habits")
+                    .setAllowedAuthenticators(
+                        androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                        androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
+                    )
+                    .build()
+
+                try {
+                    biometricPrompt.authenticate(promptInfo)
+                } catch (e: Exception) {
+                    onSuccess()
+                }
+            } else {
+                onSuccess()
+            }
+        }
+    }
+
 
     val sidePanelItems = listOf<SidePanelItem>(
         SidePanelItem(
@@ -377,15 +425,23 @@ fun HomeScreen(
                                 val isFailed = QuestHelper.isTimeOver(baseQuest)
 
                                 val isCompleted = completedQuests.contains(baseQuest.id)
+                                val isHidden = isPrivacyModeEnabled && !isPrivateQuestsUnlocked
                                 Text(
-                                    text = baseQuest.title,
+                                    text = if (isHidden) "🔒 Hidden Quest" else baseQuest.title,
                                     fontWeight = FontWeight.ExtraLight,
                                     fontSize = 23.sp,
                                     color = if (isFailed && !isCompleted) smoothRed else MaterialTheme.colorScheme.onSurface,
-                                    textDecoration = if (isCompleted) TextDecoration.LineThrough else TextDecoration.None,
+                                    textDecoration = if (isCompleted && !isHidden) TextDecoration.LineThrough else TextDecoration.None,
                                     modifier = Modifier.clickable(
                                         onClick = {
-                                            navController?.navigate(RootRoute.ViewQuest.route + baseQuest.id)
+                                            if (isHidden) {
+                                                triggerBiometricUnlock {
+                                                    isPrivateQuestsUnlocked = true
+                                                    navController?.navigate(RootRoute.ViewQuest.route + baseQuest.id)
+                                                }
+                                            } else {
+                                                navController?.navigate(RootRoute.ViewQuest.route + baseQuest.id)
+                                            }
                                         },
                                         interactionSource = remember { MutableInteractionSource() },
                                         indication = ripple(bounded = false)

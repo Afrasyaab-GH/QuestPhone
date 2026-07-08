@@ -5,7 +5,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.Bundle
 import android.util.Log
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.core.tween
@@ -79,8 +79,8 @@ import java.io.File
 import javax.inject.Inject
 
 
-@AndroidEntryPoint(ComponentActivity::class)
-class MainActivity : ComponentActivity() {
+@AndroidEntryPoint(FragmentActivity::class)
+class MainActivity : FragmentActivity() {
     @Inject lateinit var userRepository: UserRepository
     @Inject lateinit var questRepository: QuestRepository
     @Inject lateinit var statRepository: StatsRepository

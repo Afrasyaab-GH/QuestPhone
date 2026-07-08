@@ -1,22 +1,22 @@
+# QuestPhone
 
-
-**QuestPhone** is an open-source Android productivity utility designed to help users reduce screen addiction by regulating app usage through a gamified experience. The application blocks distracting apps and unlocks them only once the user completes all their work.
-
-It was started in April 2024 and is now continued
+**QuestPhone** is a powerful, open-source Android productivity utility and minimal launcher designed to help users combat screen addiction by gamifying habit-forming and app-blocking workflows. Distracting apps remain blocked until you successfully complete your real-life quests.
 
 > [!CAUTION]
-> This project is experimental and not yet ready for full production.
+> This project is experimental and under active development.
 
 ---
 
-## 🚀 Features
+## 🚀 Key Features
 
-- **Open Source**: Fully transparent, with the source code available for community contributions.
-- **Productivity Enhancement**: Helps build healthier digital habits and reduce screen addiction.
-- **Gamified**: Level up, make streaks, collect objects, earn rewards, and more.
-- **Minimal Launcher**: Optional launcher that turns your device into a productivity beast.
-- **Unlimited Possibilities**: Almost any real-life habit can be converted into a quest.
-- **Strict Checking**: Not just checkboxes—uses integrations to verify your quests.
+- **Minimalist Launcher**: Minimizes screen clutter and keeps your focus where it belongs.
+- **Gamified Habits**: Level up, build streaks, earn coins, collect objects, and track progress.
+- **Strict Real-Life Verification**: Uses hardware-accelerated local AI or external integrations to verify that you actually completed your quests.
+- **On-Device Privacy First**: Local-first architecture with optional secure end-to-end sync.
+- **AES-256 Backup Encryption**: Export and import your data with high-grade PBKDF2 password-derived AES-256-CBC encryption.
+- **Habit Privacy Mode**: Hide sensitive quest titles (e.g. medical or personal habits) behind a `"🔒 Hidden Quest"` mask, unlocked via Android Biometrics (Fingerprint/Face/PIN/Pattern).
+- **Background Auto-Backups**: Periodically saves local rolling backups of your profile and quests in the background via Android `WorkManager`.
+- **Sync Migrator**: Seamlessly uploads and merges offline anonymous statistics and quests to your online account upon registration or login.
 
 ---
 
@@ -37,39 +37,50 @@ Click on any image to enlarge.
 
 ---
 
+## 🛠️ Tech Stack & Architecture
 
+- **UI & State**: Jetpack Compose, Material Design 3, Dagger Hilt.
+- **Database & Sync**: Room (SQLite), Supabase Auth & Database Sync.
+- **On-Device AI Engine**:
+  - **SentencePiece JNI**: Custom JNI native C++ wrapper compiled via CMake.
+  - **SigLIP ONNX Runtime**: Local zero-shot vision classification for image features.
+  - **Gemini Nano (AICore)**: Local LLM reasoning utilizing Google's system-level `AICore` client API.
+  - **Fallback Chain**: Local Gemini Nano ➔ Private Gemini API Key ➔ Cloud Server Validation ➔ Local SigLIP.
 
-## 📝 Todo
+---
 
-- [x] Add an API for other developers to turn their apps into quests.
-- [x] AI-generated motivational reminders.
+## 📦 Build & Development Instructions
 
-## Features
-- Full Blown minimal launcher with support for widgets 
-- Track Steps, Distance covered, Hydration, Sleep, and Calories burned via Health Connect
-- Habit tracker cum Habit former
-- On Device AI model for Ai Quest Verification (doesn't work properly rn, need help :sob:)
-- Reminders from our on device ai 
-- Supports external integrations via the questphone api
-- Screentime statistics
-- Quest Statistics
-- Shareable profiles [example]
-- Cool Animations
+### Prerequisites
+1. **JDK 17** (OpenJDK 17 recommended)
+2. **Android SDK** (API 34)
+3. **NDK & CMake** (Install via Android Studio SDK Manager)
 
-## FAQ
+### Build Commands
 
-### Q: Is QuestPhone privacy friendly?
+To build and compile both build variants:
 
-**A:** Yes, way more than any closed-source app blockers or habit trackers.
+```powershell
+# Compile Kotlin and generate release APKs
+.\gradlew.bat assemblePlayDebug assembleFdroidDebug
+```
 
-### Q: Why is Questphone a launcher?
-**A:** The only way for us to make app blocker service always run without using accessibility service was through this
+### Build Gotchas & Fixes
 
-### Q: Can I use it as a simple habit tracker?
-**A:** Yes! you can simply select no apps as distractive and enjoy your habit tracker
+> [!TIP]
+> **Windows Gradle Multi-Drive Root Limitation**:
+> If your project resides on a secondary drive (e.g. `D:`) while the default Gradle cache folder is on `C:`, KSP will throw a `different roots` exception. Bypass this by setting the Gradle user home directory on the same drive:
+> ```powershell
+> .\gradlew.bat --gradle-user-home D:\PROJECTS\QuestPhone\.gradle_home assemblePlayDebug assembleFdroidDebug
+> ```
 
-## Tech Stack
-- Compose
-- Room 
-- Supabase
-- Dagger Hilt
+> [!NOTE]
+> **JNI Symlink Limitation on Windows**:
+> Standard Git checkouts on Windows map symlinks as text redirect files. The build's JNI configuration bypasses this by compiling SentencePiece sources directly from their actual directories:
+> [CMakeLists.txt](file:///d:/PROJECTS/QuestPhone/ai/src/main/cpp/CMakeLists.txt) references `src/` and `src/builtin_pb/` explicitly to ensure correct native builds.
+
+---
+
+## 📄 License
+
+Licensed under the [Apache License 2.0](LICENSE).
