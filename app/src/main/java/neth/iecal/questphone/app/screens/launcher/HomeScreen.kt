@@ -55,6 +55,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -220,11 +221,22 @@ fun HomeScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    val isDoubleTapToSleepEnabled = remember(context) {
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && isAccessibilityServiceEnabled(
-            context,
-            LockScreenService::class.java
-        )
+    var isDoubleTapToSleepEnabled by remember { mutableStateOf(false) }
+
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, context) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                isDoubleTapToSleepEnabled = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && isAccessibilityServiceEnabled(
+                    context,
+                    LockScreenService::class.java
+                )
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
     }
 
 
