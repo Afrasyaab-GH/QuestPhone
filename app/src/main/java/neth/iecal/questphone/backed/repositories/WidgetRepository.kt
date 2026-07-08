@@ -14,6 +14,7 @@ import androidx.room.RoomDatabase
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
@@ -65,7 +66,7 @@ object WidgetModule {
 
     @Provides
     @Singleton
-    fun provideDatabase(context: Context): WidgetDatabase =
+    fun provideDatabase(@ApplicationContext context: Context): WidgetDatabase =
         Room.databaseBuilder(
             context,
             WidgetDatabase::class.java,

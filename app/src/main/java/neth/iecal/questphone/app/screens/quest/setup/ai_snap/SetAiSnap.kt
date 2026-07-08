@@ -262,25 +262,23 @@ fun SetAiSnap(editQuestId:String? = null,navController: NavHostController, viewM
                             Text("Test Prompt")
                         }
 
-                        if (!BuildConfig.IS_FDROID) {
-                            Column(
-                                modifier = Modifier.padding(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                Text(
-                                    "Image Features (Optional)",
-                                    style = MaterialTheme.typography.titleMedium
-                                )
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Text(
+                                "Image Features (Optional)",
+                                style = MaterialTheme.typography.titleMedium
+                            )
 
-                                Text(
-                                    "Enter all the features that must be present in all snaps. Examples: a green wall, a green watch on hand etc",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-
-                            AddRemoveListWithDialog(items = features)
+                            Text(
+                                "Enter all the features that must be present in all snaps. Examples: a green wall, a green watch on hand etc",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
+
+                        AddRemoveListWithDialog(items = features)
                     }
 
                     Button(

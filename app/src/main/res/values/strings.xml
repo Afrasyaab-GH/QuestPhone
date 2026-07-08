@@ -30,7 +30,7 @@
     <string name="antiquit_55">You’ve got the control everyone else wishes they had. Don’t throw it away now.</string>
     <string name="antiquit_60">You’re proving to yourself that you can actually change. That’s huge.</string>
     <string name="antiquit_65">The hard part isn’t over — it’s transforming you right now. Don’t step out.</string>
-    <string name="antiquit_70">You’ve broken 70% of your limits. The last 30% is your victory lap.</string>
+    <string name="antiquit_70" formatted="false">You’ve broken 70% of your limits. The last 30% is your victory lap.</string>
     <string name="antiquit_75">This panic isn’t real danger. It’s your brain begging for the easy way out.</string>
     <string name="antiquit_80">Imagine your future self watching this moment — proud that you didn’t give up.</string>
     <string name="antiquit_85">You’ll never forgive yourself if you quit this close. Just hold on a bit longer.</string>

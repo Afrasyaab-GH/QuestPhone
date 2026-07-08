@@ -1,6 +1,7 @@
 #include <jni.h>
 #include <sentencepiece_processor.h>
 #include <string>
+#include <vector>
 
 sentencepiece::SentencePieceProcessor sp;
 

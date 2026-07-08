@@ -174,11 +174,6 @@ fun ModelDownloadDialog(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clickable(enabled = !isModelDownloading) {
-                                            if(model.isOnline && neth.iecal.questphone.BuildConfig.IS_FDROID){
-                                                Toast.makeText(context,"Please download the app from playstore to access this",
-                                                    Toast.LENGTH_SHORT).show()
-                                                return@clickable
-                                            }
                                             if ((isDownloaded && !needsUpdate)|| model.isOnline ) {
                                                 sp.edit(commit = true) {
                                                     putString("selected_one_shot_model", model.id)

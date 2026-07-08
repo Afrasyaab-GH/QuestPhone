@@ -12,6 +12,8 @@ add_library(sentencepiece_jni SHARED sentencepiece_jni.cpp)
 
 # Add include path
 target_include_directories(sentencepiece_jni PRIVATE
+        "${CMAKE_SOURCE_DIR}/../sentencepiece/src"
+        "${CMAKE_SOURCE_DIR}/../sentencepiece/src/builtin_pb"
         "${CMAKE_SOURCE_DIR}/../sentencepiece/include"
 )
 

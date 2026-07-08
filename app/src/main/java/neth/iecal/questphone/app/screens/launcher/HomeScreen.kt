@@ -297,29 +297,18 @@ fun HomeScreen(
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && isDoubleTapToSleepEnabled) {
                                 performLockScreenAction()
                             } else {
-                                if (BuildConfig.IS_FDROID) {
-                                    scope.launch {
-                                        snackbarHostState.showSnackbar(
-                                            message = "Enable Accessibility Service to use double-tap to sleep.",
-                                            actionLabel = "Open",
-                                            duration = SnackbarDuration.Short
-                                        ).also { result ->
-                                            if (result == SnackbarResult.ActionPerformed) {
-                                                openAccessibilityServiceScreen(
-                                                    context,
-                                                    LockScreenService::class.java
-                                                )
-                                            }
+                                scope.launch {
+                                    snackbarHostState.showSnackbar(
+                                        message = "Enable Accessibility Service to use double-tap to sleep.",
+                                        actionLabel = "Open",
+                                        duration = SnackbarDuration.Short
+                                    ).also { result ->
+                                        if (result == SnackbarResult.ActionPerformed) {
+                                            openAccessibilityServiceScreen(
+                                                context,
+                                                LockScreenService::class.java
+                                            )
                                         }
-                                    }
-                                } else {
-
-                                    scope.launch {
-                                        snackbarHostState.showSnackbar(
-                                            message = "Double tap to sleep is only available on fdroid/gh release variant.",
-                                            actionLabel = "Okay",
-                                            duration = SnackbarDuration.Short
-                                        )
                                     }
                                 }
                             }

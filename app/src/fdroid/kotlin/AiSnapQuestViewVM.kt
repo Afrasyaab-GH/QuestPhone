@@ -30,6 +30,7 @@ import java.io.File
 import java.nio.LongBuffer
 import javax.inject.Inject
 import neth.iecal.questphone.core.Supabase
+import io.github.jan.supabase.auth.auth
 import androidx.core.graphics.scale
 import kotlin.random.Random
 import kotlinx.coroutines.delay
