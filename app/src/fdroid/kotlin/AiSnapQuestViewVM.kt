@@ -85,31 +85,37 @@ class AiSnapQuestViewVM @Inject constructor(
 
     fun loadModel(): Boolean {
         return try {
-            if (isModelLoaded) return true
+            val sp = application.getSharedPreferences("models", Context.MODE_PRIVATE)
+            val currentSelectedModel = sp.getString("selected_one_shot_model", "online") ?: "online"
+            if (isModelLoaded && ::modelId.isInitialized && modelId == currentSelectedModel) return true
+
             currentStep.value = EvaluationStep.CHECKING_MODEL
             env = OrtEnvironment.getEnvironment()
-            val sp = application.getSharedPreferences("models", Context.MODE_PRIVATE)
-            modelId = sp.getString("selected_one_shot_model", "online") ?: run {
-                error.value = "No model selected"
-                return false
-            }
-            Log.d("Loading mode",modelId)
-            if(modelId == "online"){
+            modelId = currentSelectedModel
+            Log.d("Loading mode", modelId)
+            if (modelId == "online") {
                 isModelLoaded = true
                 isOnlineInferencing = true
                 return true
-
+            } else {
+                isOnlineInferencing = false
             }
 
-            Log.d("Loading Model","Starting to load model $modelId ")
+            Log.d("Loading Model", "Starting to load model $modelId ")
             val modelFile = File(application.filesDir, "$modelId.onnx")
             if (!modelFile.exists()) {
                 isModelDownloaded.value = false
-                error.value = if (sp.contains("downloading")) {
+                val reasonMsg = if (sp.contains("downloading")) {
                     "Please wait until the model fully downloads"
                 } else {
-                    "Please download a model."
+                    "Model not found. Please click the model icon in the top right to download it"
                 }
+                results.value = TaskValidationClient.ValidationResult(
+                    isValid = false,
+                    reason = reasonMsg
+                )
+                currentStep.value = EvaluationStep.COMPLETED
+                isModelLoaded = false
                 return false
             }
             currentStep.value = EvaluationStep.LOADING_MODEL
@@ -123,7 +129,12 @@ class AiSnapQuestViewVM @Inject constructor(
             isModelLoaded = true
             return true
         } catch (e: Exception) {
-            error.value = "Failed to load model: ${e.message}"
+            results.value = TaskValidationClient.ValidationResult(
+                isValid = false,
+                reason = "Failed to load model: ${e.message}"
+            )
+            currentStep.value = EvaluationStep.COMPLETED
+            isModelLoaded = false
             false
         }
     }

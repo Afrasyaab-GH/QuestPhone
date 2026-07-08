@@ -230,6 +230,18 @@ fun ModelDownloadDialog(
                                                     modifier = Modifier.padding(top = 2.dp)
                                                 )
                                                 Text(
+                                                    text = if (model.isOnline) {
+                                                        "Requires online access and your private Gemini API Key. Best validation accuracy."
+                                                    } else {
+                                                        "Completely offline. Uses a small local model (~15MB), which has lower accuracy."
+                                                    },
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = if (isSelected)
+                                                        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f)
+                                                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                                    modifier = Modifier.padding(top = 4.dp)
+                                                )
+                                                Text(
                                                     "Version: ${model.version}" + if (needsUpdate) " (Update Available)" else "",
                                                     style = MaterialTheme.typography.labelSmall,
                                                     color = MaterialTheme.colorScheme.error.takeIf { needsUpdate }
