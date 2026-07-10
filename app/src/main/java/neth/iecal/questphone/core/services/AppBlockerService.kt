@@ -16,6 +16,7 @@ import android.content.IntentFilter
 import android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
 import android.os.Build
 import android.os.Handler
+import android.os.HandlerThread
 import android.os.IBinder
 import android.os.Looper
 import android.os.SystemClock
@@ -41,6 +42,8 @@ class AppBlockerService : Service() {
     private val TAG = "AppBockServiceFG"
     private lateinit var usageStatsManager: UsageStatsManager
     private lateinit var handler: Handler
+    private lateinit var blockerThread: HandlerThread
+    private lateinit var blockerHandler: Handler
     private var timerRunnable: Runnable? = null
     private var lastForegroundPackage: String? = null
     private var isTimerRunning = false
@@ -74,6 +77,8 @@ class AppBlockerService : Service() {
         Log.d(TAG, "AppBlockService onCreate")
         usageStatsManager = getSystemService(USAGE_STATS_SERVICE) as UsageStatsManager
         handler = Handler(Looper.getMainLooper())
+        blockerThread = HandlerThread("AppBlockerMonitor").apply { start() }
+        blockerHandler = Handler(blockerThread.looper)
         createNotificationChannel()
         setupBroadcastListeners()
         loadLockedApps()
@@ -113,7 +118,8 @@ class AppBlockerService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        handler.removeCallbacks(appMonitorRunnable)
+        blockerHandler.removeCallbacks(appMonitorRunnable)
+        blockerThread.quitSafely()
         AppBlockerServiceInfo.appBlockerService = null
         showHomwScreenOverlay()
         // remove the notification when service is destroyed
@@ -157,13 +163,13 @@ class AppBlockerService : Service() {
     }
 
     private fun startMonitoringApps() {
-        handler.post(appMonitorRunnable)
+        blockerHandler.post(appMonitorRunnable)
     }
 
     private val appMonitorRunnable = object : Runnable {
         override fun run() {
             detectAndHandleForegroundApp()
-            handler.postDelayed(this, STANDARD_POLLING_INTERVAL_MS)
+            blockerHandler.postDelayed(this, STANDARD_POLLING_INTERVAL_MS)
         }
     }
 
@@ -231,7 +237,6 @@ class AppBlockerService : Service() {
 
     // Cleans up apps whose temporary unlock duration has expired
     private fun cleanUpExpiredUnlocks(currentTime: Long) {
-        loadUnlockedAppsFromServer()
         val expiredApps = mutableListOf<String>()
         for ((packageName, expiryTime) in AppBlockerServiceInfo.unlockedApps) {
             if (currentTime >= expiryTime) {
@@ -239,7 +244,10 @@ class AppBlockerService : Service() {
                 Log.d(TAG, "Temporary unlock expired for: $packageName")
             }
         }
-        expiredApps.forEach { AppBlockerServiceInfo.unlockedApps.remove(it) }
+        if (expiredApps.isNotEmpty()) {
+            expiredApps.forEach { AppBlockerServiceInfo.unlockedApps.remove(it) }
+            saveUnlockedAppsToServer()
+        }
     }
 
     private fun shouldShowLockScreen(
@@ -476,7 +484,10 @@ class AppBlockerService : Service() {
             Log.d(TAG, intent?.action.toString())
             if (intent == null) return
             when (intent.action) {
-                INTENT_ACTION_REFRESH_APP_BLOCKER -> loadLockedApps()
+                INTENT_ACTION_REFRESH_APP_BLOCKER -> {
+                    loadLockedApps()
+                    loadUnlockedAppsFromServer()
+                }
                 INTENT_ACTION_START_DEEP_FOCUS -> {
                     AppBlockerServiceInfo.deepFocus.exceptionApps =
                         intent.getStringArrayListExtra("exception")?.toHashSet()!!
