@@ -221,6 +221,22 @@ fun AiEvaluationScreen(
                                     Text("Save Key & Retry")
                                 }
                             }
+                            val settingsSp = context.getSharedPreferences("private_settings", android.content.Context.MODE_PRIVATE)
+                            val currentEngine = settingsSp.getString("validation_engine", "cloud") ?: "cloud"
+                            if (!isSuccess && currentEngine != "cloud") {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Button(
+                                    onClick = {
+                                        settingsSp.edit().putString("validation_engine", "cloud").apply()
+                                        Toast.makeText(context, "Switched to Cloud Server! Retrying...", Toast.LENGTH_SHORT).show()
+                                        viewModel.resetResults()
+                                        viewModel.evaluateQuest(onDismiss)
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("Switch to Cloud Server & Retry")
+                                }
+                            }
                             Spacer(modifier = Modifier.height(8.dp))
                             Button(onClick = {
                                 viewModel.resetResults()

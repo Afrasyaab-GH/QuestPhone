@@ -142,15 +142,19 @@ class MainActivity : FragmentActivity() {
 
                     TheSystemDialog()
                     LaunchedEffect(Unit) {
-                        unSyncedQuestItems.collect {
-                            notificationScheduler.reloadAllReminders()
-                            if (context.isOnline() && !userRepository.userInfo.isAnonymous) {
-                                triggerQuestSync(applicationContext)
+                        launch {
+                            unSyncedQuestItems.collect {
+                                notificationScheduler.reloadAllReminders()
+                                if (context.isOnline() && !userRepository.userInfo.isAnonymous) {
+                                    triggerQuestSync(applicationContext)
+                                }
                             }
                         }
-                        unSyncedStatsItems.collect {
-                            if (context.isOnline() && !userRepository.userInfo.isAnonymous ) {
-                                triggerStatsSync(applicationContext)
+                        launch {
+                            unSyncedStatsItems.collect {
+                                if (context.isOnline() && !userRepository.userInfo.isAnonymous ) {
+                                    triggerStatsSync(applicationContext)
+                                }
                             }
                         }
                     }

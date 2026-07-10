@@ -53,7 +53,7 @@ object FcmHandler {
                 showToast("Added New gifts!!",context)
             }
             if(data.containsKey("gift_coins")){
-                val coins = data["coins"]?.toInt() ?: 0
+                val coins = data["gift_coins"]?.toInt() ?: 0
                 userRepository.addCoins(coins)
                 showToast("Added $coins coins",context)
             }

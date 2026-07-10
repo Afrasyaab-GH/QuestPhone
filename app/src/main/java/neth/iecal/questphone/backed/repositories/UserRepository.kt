@@ -77,7 +77,7 @@ class UserRepository @Inject constructor(
     }
 
     fun activateBoost(item: InventoryItem, hoursToAdd: Long, minsToAdd: Long){
-        userInfo.active_boosts.put(InventoryItem.XP_BOOSTER, getFullTimeAfter(hoursToAdd, minsToAdd))
+        userInfo.active_boosts.put(item, getFullTimeAfter(hoursToAdd, minsToAdd))
         saveUserInfo()
         //update state
         activeBoostsState.value = userInfo.active_boosts

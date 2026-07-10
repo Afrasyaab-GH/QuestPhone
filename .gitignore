@@ -17,3 +17,4 @@ local.properties
 app/fdroid/*
 .gradle_home/
 .kotlin/
+app/google-services.json

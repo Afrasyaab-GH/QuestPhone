@@ -64,6 +64,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.compose.material3.RadioButton
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.semantics.Role
+
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.application
 import androidx.lifecycle.viewModelScope
@@ -131,6 +136,16 @@ class UserInfoViewModel @Inject constructor(
     fun saveGeminiApiKey(key: String) {
         val sp = getApplication<Application>().getSharedPreferences("private_settings", Context.MODE_PRIVATE)
         sp.edit().putString("gemini_api_key", key).apply()
+    }
+
+    fun getValidationEngine(): String {
+        val sp = getApplication<Application>().getSharedPreferences("private_settings", Context.MODE_PRIVATE)
+        return sp.getString("validation_engine", "cloud") ?: "cloud"
+    }
+
+    fun saveValidationEngine(engine: String) {
+        val sp = getApplication<Application>().getSharedPreferences("private_settings", Context.MODE_PRIVATE)
+        sp.edit().putString("validation_engine", engine).apply()
     }
 
     fun getPrivacyModeEnabled(): Boolean {
@@ -272,12 +287,26 @@ fun UserInfoScreen(viewModel: UserInfoViewModel = hiltViewModel(),navController:
     )
 
     var isGeminiKeyDialogVisible by remember { mutableStateOf(false) }
+    var isValidationEngineDialogVisible by remember { mutableStateOf(false) }
 
     if (isGeminiKeyDialogVisible) {
         GeminiKeyDialog(
             currentKey = viewModel.getGeminiApiKey(),
             onSave = { viewModel.saveGeminiApiKey(it) },
             onDismiss = { isGeminiKeyDialogVisible = false }
+        )
+    }
+
+    if (isValidationEngineDialogVisible) {
+        ValidationEngineDialog(
+            currentEngine = viewModel.getValidationEngine(),
+            onSave = { engine ->
+                viewModel.saveValidationEngine(engine)
+                if (engine == "gemini_api" && viewModel.getGeminiApiKey().isEmpty()) {
+                    isGeminiKeyDialogVisible = true
+                }
+            },
+            onDismiss = { isValidationEngineDialogVisible = false }
         )
     }
 
@@ -400,6 +429,9 @@ fun UserInfoScreen(viewModel: UserInfoViewModel = hiltViewModel(),navController:
                         },
                         onConfigureGeminiKey = {
                             isGeminiKeyDialogVisible = true
+                        },
+                        onConfigureEngine = {
+                            isValidationEngineDialogVisible = true
                         },
                         isPrivacyModeEnabled = isPrivacyModeEnabled,
                         onTogglePrivacyMode = { enabled ->
@@ -559,6 +591,7 @@ private fun Menu(
     onBackup: () -> Unit,
     onRestore: () -> Unit,
     onConfigureGeminiKey: () -> Unit,
+    onConfigureEngine: () -> Unit,
     isPrivacyModeEnabled: Boolean,
     onTogglePrivacyMode: (Boolean) -> Unit,
     onMergeOfflineData: () -> Unit
@@ -582,6 +615,14 @@ private fun Menu(
             text = { Text("Log Out") },
             onClick = {
                 isLogoutInfoVisible = true
+                expanded = false
+            }
+        )
+
+        DropdownMenuItem(
+            text = { Text("AI Validation Engine") },
+            onClick = {
+                onConfigureEngine()
                 expanded = false
             }
         )
@@ -927,3 +968,65 @@ fun BackupPasswordDialog(
         }
     )
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ValidationEngineDialog(
+    currentEngine: String,
+    onSave: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var selectedEngine by remember { mutableStateOf(currentEngine) }
+    val options = listOf(
+        "cloud" to "QuestPhone Cloud Server",
+        "local" to "Local On-Device AI",
+        "gemini_api" to "Private Gemini API Key"
+    )
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("AI Validation Engine") },
+        text = {
+            Column(Modifier.selectableGroup()) {
+                options.forEach { (value, label) ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(56.dp)
+                            .selectable(
+                                selected = (value == selectedEngine),
+                                onClick = { selectedEngine = value },
+                                role = Role.RadioButton
+                            )
+                            .padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = (value == selectedEngine),
+                            onClick = null
+                        )
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.padding(start = 16.dp)
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                onSave(selectedEngine)
+                onDismiss()
+            }) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+

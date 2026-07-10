@@ -123,7 +123,7 @@ class StatsSyncWorker(
         unSyncedStats.forEach { stat ->
             try {
                 Supabase.supabase.postgrest["quest_stats"].upsert(stat)
-                questRepository.markAsSynced(stat.id)
+                statsRepository.markAsSynced(stat.id)
             } catch (e: Exception) {
                 Log.e("StatSyncWorker", "Regular sync failed $stat", e)
             }

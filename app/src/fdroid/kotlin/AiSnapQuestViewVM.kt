@@ -34,6 +34,7 @@ import io.github.jan.supabase.auth.auth
 import androidx.core.graphics.scale
 import kotlin.random.Random
 import kotlinx.coroutines.delay
+import neth.iecal.questphone.core.utils.LocalGeminiNanoValidator
 
 
 const val MINIMUM_ZERO_SHOT_THRESHOLD = 0.08
@@ -67,6 +68,8 @@ class AiSnapQuestViewVM @Inject constructor(
     private var isOnlineInferencing = false
 
     private val client = TaskValidationClient()
+    private val localNano = LocalGeminiNanoValidator(application)
+
     init {
         viewModelScope.launch(Dispatchers.IO) {
             loadModel()
@@ -85,23 +88,50 @@ class AiSnapQuestViewVM @Inject constructor(
 
     fun loadModel(): Boolean {
         return try {
-            val sp = application.getSharedPreferences("models", Context.MODE_PRIVATE)
-            val currentSelectedModel = sp.getString("selected_one_shot_model", "online") ?: "online"
-            if (isModelLoaded && ::modelId.isInitialized && modelId == currentSelectedModel) return true
+            val settingsSp = application.getSharedPreferences("private_settings", Context.MODE_PRIVATE)
+            val engine = settingsSp.getString("validation_engine", "cloud") ?: "cloud"
 
-            currentStep.value = EvaluationStep.CHECKING_MODEL
-            env = OrtEnvironment.getEnvironment()
-            modelId = currentSelectedModel
-            Log.d("Loading mode", modelId)
-            if (modelId == "online") {
+            if (engine != "local") {
                 isModelLoaded = true
                 isOnlineInferencing = true
                 return true
-            } else {
-                isOnlineInferencing = false
             }
 
-            Log.d("Loading Model", "Starting to load model $modelId ")
+            val sp = application.getSharedPreferences("models", Context.MODE_PRIVATE)
+            val currentSelectedModel = sp.getString("selected_one_shot_model", "online") ?: "online"
+
+            val modelIdToLoad = if (currentSelectedModel == "online") {
+                val files = application.filesDir.listFiles()
+                val onnxFile = files?.find { it.name.endsWith(".onnx") }
+                if (onnxFile != null) {
+                    onnxFile.nameWithoutExtension
+                } else {
+                    isModelDownloaded.value = false
+                    val reasonMsg = if (sp.contains("downloading")) {
+                        "Please wait until the model fully downloads"
+                    } else {
+                        "Model not found. Please click the model icon in the top right to download it"
+                    }
+                    results.value = TaskValidationClient.ValidationResult(
+                        isValid = false,
+                        reason = reasonMsg
+                    )
+                    currentStep.value = EvaluationStep.COMPLETED
+                    isModelLoaded = false
+                    return false
+                }
+            } else {
+                currentSelectedModel
+            }
+
+            if (isModelLoaded && ::modelId.isInitialized && modelId == modelIdToLoad) return true
+
+            currentStep.value = EvaluationStep.CHECKING_MODEL
+            env = OrtEnvironment.getEnvironment()
+            modelId = modelIdToLoad
+            isOnlineInferencing = false
+
+            Log.d("Loading Model", "Starting to load model $modelId")
             val modelFile = File(application.filesDir, "$modelId.onnx")
             if (!modelFile.exists()) {
                 isModelDownloaded.value = false
@@ -141,13 +171,15 @@ class AiSnapQuestViewVM @Inject constructor(
 
     fun evaluateQuest(onEvaluationComplete: () -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
-            if (!isModelLoaded && !loadModel()) return@launch
-            if(!isOnlineInferencing) {
+            val settingsSp = application.getSharedPreferences("private_settings", Context.MODE_PRIVATE)
+            val engine = settingsSp.getString("validation_engine", "cloud") ?: "cloud"
+
+            if (engine == "local") {
+                if (!isModelLoaded && !loadModel()) return@launch
                 runOfflineInference(onEvaluationComplete)
             } else {
                 runOnlineInference(onEvaluationComplete)
             }
-
         }
     }
 
@@ -158,9 +190,18 @@ class AiSnapQuestViewVM @Inject constructor(
         val compressedFile = resizeAndCompressImage(photoFile, 1080, 50)
 
         val settingsSp = application.getSharedPreferences("private_settings", android.content.Context.MODE_PRIVATE)
-        val geminiKey = settingsSp.getString("gemini_api_key", null)
+        val engine = settingsSp.getString("validation_engine", "cloud") ?: "cloud"
 
-        if (!geminiKey.isNullOrBlank()) {
+        if (engine == "gemini_api") {
+            val geminiKey = settingsSp.getString("gemini_api_key", null)
+            if (geminiKey.isNullOrBlank()) {
+                results.value = TaskValidationClient.ValidationResult(
+                    isValid = false,
+                    reason = "Private Gemini API key is missing. Please configure it in your Profile settings."
+                )
+                currentStep.value = EvaluationStep.COMPLETED
+                return
+            }
             val geminiValidator = nethical.questphone.backend.GeminiValidator()
             geminiValidator.validateTask(
                 compressedFile,
@@ -177,7 +218,7 @@ class AiSnapQuestViewVM @Inject constructor(
                     onEvaluationComplete()
                 }
             }
-        } else {
+        } else { // "cloud"
             val token = if (userRepository.userInfo.isAnonymous) {
                 ""
             } else {
@@ -187,7 +228,7 @@ class AiSnapQuestViewVM @Inject constructor(
             if (token.isEmpty()) {
                 results.value = TaskValidationClient.ValidationResult(
                     isValid = false,
-                    reason = "Authentication required. Please configure a private Gemini API Key in your Profile settings to validate quests offline."
+                    reason = "Authentication required. Please log in or configure a private Gemini API Key / Local AI."
                 )
                 currentStep.value = EvaluationStep.COMPLETED
                 return
@@ -288,7 +329,6 @@ class AiSnapQuestViewVM @Inject constructor(
             val detectedFeatures = sorted.filter { it.second > MINIMUM_ZERO_SHOT_THRESHOLD }.map { it.first }
 
             // Local Gemini Nano reasoning pipeline integration
-            val localNano = neth.iecal.questphone.core.utils.LocalGeminiNanoValidator(application)
             if (localNano.isAvailable()) {
                 val nanoResult = localNano.validateTaskLocally(aiQuest.taskDescription, detectedFeatures)
                 results.value = nanoResult
