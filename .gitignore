@@ -15,3 +15,7 @@
 local.properties
 *.apk
 app/fdroid/*
+.gradle_home/
+.temp/
+.kotlin/
+app/google-services.json

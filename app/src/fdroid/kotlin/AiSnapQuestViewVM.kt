@@ -29,6 +29,12 @@ import nethical.questphone.data.quest.ai.snap.AiSnap
 import java.io.File
 import java.nio.LongBuffer
 import javax.inject.Inject
+import neth.iecal.questphone.core.Supabase
+import io.github.jan.supabase.auth.auth
+import androidx.core.graphics.scale
+import kotlin.random.Random
+import kotlinx.coroutines.delay
+import neth.iecal.questphone.core.utils.LocalGeminiNanoValidator
 
 
 const val MINIMUM_ZERO_SHOT_THRESHOLD = 0.08
@@ -62,6 +68,8 @@ class AiSnapQuestViewVM @Inject constructor(
     private var isOnlineInferencing = false
 
     private val client = TaskValidationClient()
+    private val localNano = LocalGeminiNanoValidator(application)
+
     init {
         viewModelScope.launch(Dispatchers.IO) {
             loadModel()
@@ -80,31 +88,64 @@ class AiSnapQuestViewVM @Inject constructor(
 
     fun loadModel(): Boolean {
         return try {
-            if (isModelLoaded) return true
-            currentStep.value = EvaluationStep.CHECKING_MODEL
-            env = OrtEnvironment.getEnvironment()
-            val sp = application.getSharedPreferences("models", Context.MODE_PRIVATE)
-            modelId = sp.getString("selected_one_shot_model", "online") ?: run {
-                error.value = "No model selected"
-                return false
-            }
-            Log.d("Loading mode",modelId)
-            if(modelId == "online"){
+            val settingsSp = application.getSharedPreferences("private_settings", Context.MODE_PRIVATE)
+            val engine = settingsSp.getString("validation_engine", "cloud") ?: "cloud"
+
+            if (engine != "local") {
                 isModelLoaded = true
                 isOnlineInferencing = true
                 return true
-
             }
 
-            Log.d("Loading Model","Starting to load model $modelId ")
+            val sp = application.getSharedPreferences("models", Context.MODE_PRIVATE)
+            val currentSelectedModel = sp.getString("selected_one_shot_model", "online") ?: "online"
+
+            val modelIdToLoad = if (currentSelectedModel == "online") {
+                val files = application.filesDir.listFiles()
+                val onnxFile = files?.find { it.name.endsWith(".onnx") }
+                if (onnxFile != null) {
+                    onnxFile.nameWithoutExtension
+                } else {
+                    isModelDownloaded.value = false
+                    val reasonMsg = if (sp.contains("downloading")) {
+                        "Please wait until the model fully downloads"
+                    } else {
+                        "Model not found. Please click the model icon in the top right to download it"
+                    }
+                    results.value = TaskValidationClient.ValidationResult(
+                        isValid = false,
+                        reason = reasonMsg
+                    )
+                    currentStep.value = EvaluationStep.COMPLETED
+                    isModelLoaded = false
+                    return false
+                }
+            } else {
+                currentSelectedModel
+            }
+
+            if (isModelLoaded && ::modelId.isInitialized && modelId == modelIdToLoad) return true
+
+            currentStep.value = EvaluationStep.CHECKING_MODEL
+            env = OrtEnvironment.getEnvironment()
+            modelId = modelIdToLoad
+            isOnlineInferencing = false
+
+            Log.d("Loading Model", "Starting to load model $modelId")
             val modelFile = File(application.filesDir, "$modelId.onnx")
             if (!modelFile.exists()) {
                 isModelDownloaded.value = false
-                error.value = if (sp.contains("downloading")) {
+                val reasonMsg = if (sp.contains("downloading")) {
                     "Please wait until the model fully downloads"
                 } else {
-                    "Please download a model."
+                    "Model not found. Please click the model icon in the top right to download it"
                 }
+                results.value = TaskValidationClient.ValidationResult(
+                    isValid = false,
+                    reason = reasonMsg
+                )
+                currentStep.value = EvaluationStep.COMPLETED
+                isModelLoaded = false
                 return false
             }
             currentStep.value = EvaluationStep.LOADING_MODEL
@@ -118,18 +159,104 @@ class AiSnapQuestViewVM @Inject constructor(
             isModelLoaded = true
             return true
         } catch (e: Exception) {
-            error.value = "Failed to load model: ${e.message}"
+            results.value = TaskValidationClient.ValidationResult(
+                isValid = false,
+                reason = "Failed to load model: ${e.message}"
+            )
+            currentStep.value = EvaluationStep.COMPLETED
+            isModelLoaded = false
             false
         }
     }
 
     fun evaluateQuest(onEvaluationComplete: () -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
-            if (!isModelLoaded && !loadModel()) return@launch
-            if(!isOnlineInferencing) {
+            val settingsSp = application.getSharedPreferences("private_settings", Context.MODE_PRIVATE)
+            val engine = settingsSp.getString("validation_engine", "cloud") ?: "cloud"
+
+            if (engine == "local") {
+                if (!isModelLoaded && !loadModel()) return@launch
                 runOfflineInference(onEvaluationComplete)
+            } else {
+                runOnlineInference(onEvaluationComplete)
+            }
+        }
+    }
+
+    private suspend fun runOnlineInference(onEvaluationComplete: () -> Unit) {
+        currentStep.value = EvaluationStep.INITIALIZING
+        currentStep.value = EvaluationStep.LOADING_MODEL
+        val photoFile = java.io.File(application.filesDir, AI_SNAP_PIC)
+        val compressedFile = resizeAndCompressImage(photoFile, 1080, 50)
+
+        val settingsSp = application.getSharedPreferences("private_settings", android.content.Context.MODE_PRIVATE)
+        val engine = settingsSp.getString("validation_engine", "cloud") ?: "cloud"
+
+        if (engine == "gemini_api") {
+            val geminiKey = settingsSp.getString("gemini_api_key", null)
+            if (geminiKey.isNullOrBlank()) {
+                results.value = TaskValidationClient.ValidationResult(
+                    isValid = false,
+                    reason = "Private Gemini API key is missing. Please configure it in your Profile settings."
+                )
+                currentStep.value = EvaluationStep.COMPLETED
+                return
+            }
+            val geminiValidator = nethical.questphone.backend.GeminiValidator()
+            geminiValidator.validateTask(
+                compressedFile,
+                aiQuest.taskDescription,
+                aiQuest.features.joinToString(","),
+                geminiKey
+            ) { result ->
+                results.value = result.getOrNull() ?: TaskValidationClient.ValidationResult(
+                    isValid = false,
+                    reason = "Gemini validation failed: ${result.exceptionOrNull()?.message ?: "Unknown error"}"
+                )
+                currentStep.value = EvaluationStep.COMPLETED
+                if (results.value?.isValid == true) {
+                    onEvaluationComplete()
+                }
+            }
+        } else { // "cloud"
+            val token = if (userRepository.userInfo.isAnonymous) {
+                ""
+            } else {
+                Supabase.supabase.auth.currentAccessTokenOrNull()?.toString() ?: ""
             }
 
+            if (token.isEmpty()) {
+                results.value = TaskValidationClient.ValidationResult(
+                    isValid = false,
+                    reason = "Authentication required. Please log in or configure a private Gemini API Key / Local AI."
+                )
+                currentStep.value = EvaluationStep.COMPLETED
+                return
+            }
+
+            client.validateTask(
+                compressedFile,
+                aiQuest.taskDescription,
+                aiQuest.features.joinToString(","),
+                token
+            ) { result ->
+                results.value = result.getOrNull() ?: TaskValidationClient.ValidationResult(
+                    isValid = false,
+                    reason = "Online validation failed: ${result.exceptionOrNull()?.message ?: "Unknown error"}"
+                )
+                currentStep.value = EvaluationStep.COMPLETED
+                if (results.value?.isValid == true) {
+                    onEvaluationComplete()
+                }
+            }
+        }
+
+        val allSteps = EvaluationStep.entries
+        var currentStepInt = 0
+        while (results.value == null) {
+            delay(Random.nextInt(500, 2000).toLong())
+            currentStep.value = EvaluationStep.valueOf(allSteps[currentStepInt].name)
+            if (currentStepInt != EvaluationStep.EVALUATING.ordinal) currentStepInt++
         }
     }
 
@@ -138,7 +265,7 @@ class AiSnapQuestViewVM @Inject constructor(
         results.value = null
     }
 
-    private fun runOfflineInference(onEvaluationComplete: () -> Unit){
+    private suspend fun runOfflineInference(onEvaluationComplete: () -> Unit){
         try {
             currentStep.value = EvaluationStep.INITIALIZING
 
@@ -156,7 +283,7 @@ class AiSnapQuestViewVM @Inject constructor(
 
             currentStep.value = EvaluationStep.PREPROCESSING
 
-            val queries = listOf(aiQuest.taskDescription)
+            val queries = aiQuest.features.ifEmpty { listOf(aiQuest.taskDescription) }
             val processedQueries = queries.map { "$it </s>" }
 
             currentStep.value = EvaluationStep.TOKENIZING
@@ -199,15 +326,37 @@ class AiSnapQuestViewVM @Inject constructor(
 
             val probs = logitsArray.map { 1f / (1f + kotlin.math.exp(-it)) }
             val sorted = queries.mapIndexed { i, q -> q to probs[i] }
-                .sortedByDescending { it.second }
+            val detectedFeatures = sorted.filter { it.second > MINIMUM_ZERO_SHOT_THRESHOLD }.map { it.first }
+
+            // Local Gemini Nano reasoning pipeline integration
+            if (localNano.isAvailable()) {
+                val nanoResult = localNano.validateTaskLocally(aiQuest.taskDescription, detectedFeatures)
+                results.value = nanoResult
+                currentStep.value = EvaluationStep.COMPLETED
+                if (nanoResult.isValid) {
+                    onEvaluationComplete()
+                }
+                return
+            }
+
+            // Fallback: Default SigLIP verification logic
+            val isSuccess = if (aiQuest.features.isEmpty()) {
+                sorted.isNotEmpty() && sorted[0].second > MINIMUM_ZERO_SHOT_THRESHOLD
+            } else {
+                detectedFeatures.isNotEmpty()
+            }
 
             results.value = TaskValidationClient.ValidationResult(
-                sorted[0].second > MINIMUM_ZERO_SHOT_THRESHOLD,
-                "Result Rate: " + sorted[0].second.toString()
+                isSuccess,
+                if (isSuccess) {
+                    "Detected: " + detectedFeatures.joinToString(", ")
+                } else {
+                    "Validation failed. No matching features detected."
+                }
             )
             currentStep.value = EvaluationStep.COMPLETED
 
-            if (sorted[0].second * 5> MINIMUM_ZERO_SHOT_THRESHOLD) {
+            if (isSuccess) {
                 onEvaluationComplete()
             }
 
@@ -229,4 +378,29 @@ class AiSnapQuestViewVM @Inject constructor(
     }
 
 
+}
+fun resizeAndCompressImage(file: java.io.File, maxSize: Int = 1080, quality: Int = 70): java.io.File {
+    val bitmap = android.graphics.BitmapFactory.decodeFile(file.absolutePath)
+
+    // Maintain aspect ratio
+    val ratio = bitmap.width.toFloat() / bitmap.height.toFloat()
+    val width: Int
+    val height: Int
+    if (ratio > 1) {
+        width = maxSize
+        height = (maxSize / ratio).toInt()
+    } else {
+        height = maxSize
+        width = (maxSize * ratio).toInt()
+    }
+
+    val scaledBitmap = bitmap.scale(width, height)
+
+    val compressedFile = java.io.File(file.parent, "compressed_upload.jpg")
+    val out = java.io.FileOutputStream(compressedFile)
+    scaledBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, quality, out)
+    out.flush()
+    out.close()
+
+    return compressedFile
 }

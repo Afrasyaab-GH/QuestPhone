@@ -43,6 +43,10 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.RadioButton
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.semantics.Role
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -133,6 +137,26 @@ class UserInfoViewModel @Inject constructor(
         }
     }
 
+    fun getGeminiApiKey(): String {
+        val sp = getApplication<Application>().getSharedPreferences("private_settings", Context.MODE_PRIVATE)
+        return sp.getString("gemini_api_key", "") ?: ""
+    }
+
+    fun saveGeminiApiKey(key: String) {
+        val sp = getApplication<Application>().getSharedPreferences("private_settings", Context.MODE_PRIVATE)
+        sp.edit().putString("gemini_api_key", key).apply()
+    }
+
+    fun getValidationEngine(): String {
+        val sp = getApplication<Application>().getSharedPreferences("private_settings", Context.MODE_PRIVATE)
+        return sp.getString("validation_engine", "cloud") ?: "cloud"
+    }
+
+    fun saveValidationEngine(engine: String) {
+        val sp = getApplication<Application>().getSharedPreferences("private_settings", Context.MODE_PRIVATE)
+        sp.edit().putString("validation_engine", engine).apply()
+    }
+
 }
 
 
@@ -141,6 +165,31 @@ class UserInfoViewModel @Inject constructor(
 fun UserInfoScreen(viewModel: UserInfoViewModel = hiltViewModel(),navController: NavController) {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
+
+    var isGeminiKeyDialogVisible by remember { mutableStateOf(false) }
+    var isValidationEngineDialogVisible by remember { mutableStateOf(false) }
+
+    if (isGeminiKeyDialogVisible) {
+        GeminiKeyDialog(
+            currentKey = viewModel.getGeminiApiKey(),
+            onSave = { viewModel.saveGeminiApiKey(it) },
+            onDismiss = { isGeminiKeyDialogVisible = false }
+        )
+    }
+
+    if (isValidationEngineDialogVisible) {
+        ValidationEngineDialog(
+            currentEngine = viewModel.getValidationEngine(),
+            onSave = { engine ->
+                viewModel.saveValidationEngine(engine)
+                if (engine == "gemini_api" && viewModel.getGeminiApiKey().isEmpty()) {
+                    isGeminiKeyDialogVisible = true
+                }
+            },
+            onDismiss = { isValidationEngineDialogVisible = false }
+        )
+    }
+
     Scaffold(containerColor = LocalCustomTheme.current.getRootColorScheme().surface,
         contentWindowInsets = WindowInsets(0),
         ) { innerPadding ->
@@ -194,15 +243,26 @@ fun UserInfoScreen(viewModel: UserInfoViewModel = hiltViewModel(),navController:
                         })
                     )
                     Spacer(Modifier.size(4.dp))
-                    Menu(viewModel.userInfo.isAnonymous, {
-                        viewModel.logOut {
-                            val intent = Intent(context, OnboardActivity::class.java)
-                            context.startActivity(intent)
-                            (context as Activity).finish()
+                    Menu(
+                        isAnonymous = viewModel.userInfo.isAnonymous,
+                        onLogout = {
+                            viewModel.logOut {
+                                val intent = Intent(context, OnboardActivity::class.java)
+                                context.startActivity(intent)
+                                (context as Activity).finish()
+                            }
+                        },
+                        navController = navController,
+                        onForcePull = {
+                            viewModel.onForcePull()
+                        },
+                        onConfigureGeminiKey = {
+                            isGeminiKeyDialogVisible = true
+                        },
+                        onConfigureEngine = {
+                            isValidationEngineDialogVisible = true
                         }
-                    },navController,{
-                        viewModel.onForcePull()
-                    })
+                    )
                 }
                 Spacer(Modifier.size(32.dp))
 
@@ -337,7 +397,14 @@ fun UserInfoScreen(viewModel: UserInfoViewModel = hiltViewModel(),navController:
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun Menu(isAnonymous: Boolean,onLogout: () -> Unit,navController: NavController,onForcePull: ()->Unit ) {
+private fun Menu(
+    isAnonymous: Boolean,
+    onLogout: () -> Unit,
+    navController: NavController,
+    onForcePull: () -> Unit,
+    onConfigureGeminiKey: () -> Unit,
+    onConfigureEngine: () -> Unit
+) {
     var expanded by remember { mutableStateOf(false) }
     var isLogoutInfoVisible by remember { mutableStateOf(false) }
 
@@ -353,6 +420,21 @@ private fun Menu(isAnonymous: Boolean,onLogout: () -> Unit,navController: NavCon
         expanded = expanded,
         onDismissRequest = { expanded = false }
     ) {
+        DropdownMenuItem(
+            text = { Text("AI Validation Engine") },
+            onClick = {
+                onConfigureEngine()
+                expanded = false
+            }
+        )
+
+        DropdownMenuItem(
+            text = { Text("Private Gemini API Key") },
+            onClick = {
+                onConfigureGeminiKey()
+                expanded = false
+            }
+        )
         DropdownMenuItem(
             text = { Text("Log Out") },
             onClick = {
@@ -553,4 +635,109 @@ fun shareCrashLog(context: Context) {
     }
 
     context.startActivity(Intent.createChooser(intent, "Share Crash Log"))
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun GeminiKeyDialog(
+    currentKey: String,
+    onSave: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var keyState by remember { mutableStateOf(currentKey) }
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Gemini API Key") },
+        text = {
+            Column {
+                Text(
+                    "Enter your Google Gemini API Key for private offline AI validations. This key will be stored securely on your device.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+                androidx.compose.material3.OutlinedTextField(
+                    value = keyState,
+                    onValueChange = { keyState = it },
+                    label = { Text("API Key") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                onSave(keyState.trim())
+                onDismiss()
+            }) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ValidationEngineDialog(
+    currentEngine: String,
+    onSave: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var selectedEngine by remember { mutableStateOf(currentEngine) }
+    val options = listOf(
+        "cloud" to "QuestPhone Cloud Server",
+        "local" to "Local On-Device AI",
+        "gemini_api" to "Private Gemini API Key"
+    )
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("AI Validation Engine") },
+        text = {
+            Column(Modifier.selectableGroup()) {
+                options.forEach { (value, label) ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(56.dp)
+                            .selectable(
+                                selected = (value == selectedEngine),
+                                onClick = { selectedEngine = value },
+                                role = Role.RadioButton
+                            )
+                            .padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = (value == selectedEngine),
+                            onClick = null
+                        )
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.padding(start = 16.dp)
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                onSave(selectedEngine)
+                onDismiss()
+            }) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }

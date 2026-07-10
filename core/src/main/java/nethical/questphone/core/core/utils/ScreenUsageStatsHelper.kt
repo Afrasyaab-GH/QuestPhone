@@ -24,6 +24,7 @@ class ScreenUsageStatsHelper(private val context: Context) {
 
     private val guardian = UnmatchedCloseEventGuardian()
     fun getForegroundStatsByTimestamps(start: Long, end: Long): List<ScreentimeStats> {
+        var adjustedStart = start
         // List to store currently running foreground processes
         val foregroundProcesses = mutableListOf<String>()
         if (end >= System.currentTimeMillis() - 1500) {
@@ -66,9 +67,9 @@ class ScreenUsageStatsHelper(private val context: Context) {
                         // If there's a start time, set it to null (app is no longer in the foreground)
                         moveToForegroundMap[appClass] = null
                     } else if (moveToForegroundMap.keys.none { event.packageName == it.packageName } &&
-                        guardian.test(event, start)) {
+                        guardian.test(event, adjustedStart)) {
                         // If no start time exists and the guardian confirms it's a valid unmatched close event, use the start time
-                        eventBeginTime = start
+                        eventBeginTime = adjustedStart
                     } else {
                         // Skip if it's a faulty unmatched close event
                         continue
@@ -101,7 +102,7 @@ class ScreenUsageStatsHelper(private val context: Context) {
                         moveToForegroundMap[key] = null
                     }
                     // Update the start time to the startup event's timestamp
-                    start.coerceAtLeast(event.timeStamp)
+                    adjustedStart = adjustedStart.coerceAtLeast(event.timeStamp)
                 }
             }
         }
@@ -126,7 +127,7 @@ class ScreenUsageStatsHelper(private val context: Context) {
             val packageManager = context.packageManager
             for (foregroundProcess in foregroundProcesses) {
                 if (packageManager.getLaunchIntentForPackage(foregroundProcess) != null) {
-                    componentForegroundStats.add(ComponentForegroundStat(start, minOf(System.currentTimeMillis(), end), foregroundProcess))
+                    componentForegroundStats.add(ComponentForegroundStat(adjustedStart, minOf(System.currentTimeMillis(), end), foregroundProcess))
                     Log.d("UsageStatsHelper", "Assuming that application $foregroundProcess has been used the whole query time")
                 }
             }

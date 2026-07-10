@@ -33,11 +33,15 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -189,6 +193,50 @@ fun AiEvaluationScreen(
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                             )
+                            if (!isSuccess && results?.reason?.contains("Gemini API Key", ignoreCase = true) == true) {
+                                var apiKeyInput by remember { mutableStateOf("") }
+                                Spacer(modifier = Modifier.height(12.dp))
+                                OutlinedTextField(
+                                    value = apiKeyInput,
+                                    onValueChange = { apiKeyInput = it },
+                                    label = { Text("Enter Gemini API Key") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Button(
+                                    onClick = {
+                                        if (apiKeyInput.isNotBlank()) {
+                                            val sp = context.getSharedPreferences("private_settings", android.content.Context.MODE_PRIVATE)
+                                            sp.edit().putString("gemini_api_key", apiKeyInput.trim()).apply()
+                                            Toast.makeText(context, "API Key Saved! Retrying...", Toast.LENGTH_SHORT).show()
+                                            viewModel.resetResults()
+                                            viewModel.evaluateQuest(onDismiss)
+                                        } else {
+                                            Toast.makeText(context, "Please enter a valid key", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("Save Key & Retry")
+                                }
+                            }
+                            val settingsSp = context.getSharedPreferences("private_settings", android.content.Context.MODE_PRIVATE)
+                            val currentEngine = settingsSp.getString("validation_engine", "cloud") ?: "cloud"
+                            if (!isSuccess && currentEngine != "cloud") {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Button(
+                                    onClick = {
+                                        settingsSp.edit().putString("validation_engine", "cloud").apply()
+                                        Toast.makeText(context, "Switched to Cloud Server! Retrying...", Toast.LENGTH_SHORT).show()
+                                        viewModel.resetResults()
+                                        viewModel.evaluateQuest(onDismiss)
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("Switch to Cloud Server & Retry")
+                                }
+                            }
                             Spacer(modifier = Modifier.height(8.dp))
                             Button(onClick = {
                                 viewModel.resetResults()
