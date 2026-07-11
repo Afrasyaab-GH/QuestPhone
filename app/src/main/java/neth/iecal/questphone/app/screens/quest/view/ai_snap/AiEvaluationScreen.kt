@@ -58,6 +58,12 @@ import neth.iecal.questphone.AiSnapQuestViewVM
 import neth.iecal.questphone.R
 import nethical.questphone.data.EvaluationStep
 import java.io.File
+import android.content.Context
+import androidx.compose.material3.RadioButton
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.semantics.Role
+import neth.iecal.questphone.app.screens.quest.setup.ai_snap.model.ModelDownloadDialog
 
 @SuppressLint("DefaultLocale")
 @Composable
@@ -72,8 +78,14 @@ fun AiEvaluationScreen(
     val currentStep by viewModel.currentStep.collectAsState()
     val error by viewModel.error.collectAsState()
     val results by viewModel.results.collectAsState()
-    val isModelDownloaded by viewModel.isModelDownloaded.collectAsState()
+    val modelDownloadDialogVisible = remember { mutableStateOf(false) }
 
+    if (modelDownloadDialogVisible.value) {
+        ModelDownloadDialog(
+            allowSkipping = true,
+            modelDownloadDialogVisible = modelDownloadDialogVisible
+        )
+    }
 
     LaunchedEffect(error) {
         error?.let {
@@ -195,75 +207,105 @@ fun AiEvaluationScreen(
                             )
                             if (!isSuccess) {
                                 val settingsSp = context.getSharedPreferences("private_settings", android.content.Context.MODE_PRIVATE)
-                                val currentEngine = settingsSp.getString("validation_engine", "cloud") ?: "cloud"
+                                val initialEngine = settingsSp.getString("validation_engine", "cloud") ?: "cloud"
                                 val storedApiKey = settingsSp.getString("gemini_api_key", "") ?: ""
 
-                                var showApiKeyInput by remember { mutableStateOf(storedApiKey.isBlank() || results?.reason?.contains("Gemini API Key", ignoreCase = true) == true) }
+                                var selectedEngine by remember { mutableStateOf(initialEngine) }
                                 var apiKeyInput by remember { mutableStateOf(storedApiKey) }
 
-                                Spacer(modifier = Modifier.height(12.dp))
+                                val modelsSp = context.getSharedPreferences("models", Context.MODE_PRIVATE)
+                                val currentModel = modelsSp.getString("selected_one_shot_model", "online") ?: "online"
 
-                                if (showApiKeyInput) {
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text(
+                                    text = "AI Validation Engine",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                val engines = listOf(
+                                    "cloud" to "QuestPhone Cloud Server",
+                                    "gemini_api" to "Private Gemini API Key",
+                                    "local" to "Local On-Device AI"
+                                )
+
+                                Column(Modifier.selectableGroup()) {
+                                    engines.forEach { (engineKey, label) ->
+                                        Row(
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .height(48.dp)
+                                                .selectable(
+                                                    selected = (selectedEngine == engineKey),
+                                                    onClick = { selectedEngine = engineKey },
+                                                    role = Role.RadioButton
+                                                ),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            RadioButton(
+                                                selected = (selectedEngine == engineKey),
+                                                onClick = null
+                                            )
+                                            Text(
+                                                text = label,
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                modifier = Modifier.padding(start = 8.dp)
+                                            )
+                                        }
+                                    }
+                                }
+
+                                if (selectedEngine == "gemini_api") {
+                                    Spacer(modifier = Modifier.height(8.dp))
                                     OutlinedTextField(
                                         value = apiKeyInput,
                                         onValueChange = { apiKeyInput = it },
-                                        label = { Text("Enter Gemini API Key") },
+                                        label = { Text("Gemini API Key") },
                                         singleLine = true,
                                         modifier = Modifier.fillMaxWidth()
                                     )
+                                } else if (selectedEngine == "local") {
                                     Spacer(modifier = Modifier.height(8.dp))
-                                    Button(
-                                        onClick = {
-                                            if (apiKeyInput.isNotBlank()) {
-                                                settingsSp.edit()
-                                                    .putString("gemini_api_key", apiKeyInput.trim())
-                                                    .putString("validation_engine", "gemini_api")
-                                                    .apply()
-                                                Toast.makeText(context, "API Key Saved & Switched! Retrying...", Toast.LENGTH_SHORT).show()
-                                                viewModel.resetResults()
-                                                viewModel.evaluateQuest(onDismiss)
-                                            } else {
-                                                Toast.makeText(context, "Please enter a valid key", Toast.LENGTH_SHORT).show()
-                                            }
-                                        },
-                                        modifier = Modifier.fillMaxWidth()
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
-                                        Text("Save Key & Retry")
+                                        Text(
+                                            text = "Model: $currentModel",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Button(
+                                            onClick = { modelDownloadDialogVisible.value = true },
+                                            modifier = Modifier.padding(start = 8.dp)
+                                        ) {
+                                            Text("Select Model")
+                                        }
                                     }
                                 }
 
-                                if (currentEngine != "cloud") {
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Button(
-                                        onClick = {
-                                            settingsSp.edit().putString("validation_engine", "cloud").apply()
-                                            Toast.makeText(context, "Switched to Cloud Server! Retrying...", Toast.LENGTH_SHORT).show()
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Button(
+                                    onClick = {
+                                        if (selectedEngine == "gemini_api" && apiKeyInput.isBlank()) {
+                                            Toast.makeText(context, "Please enter a valid API Key", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            settingsSp.edit().apply {
+                                                putString("validation_engine", selectedEngine)
+                                                if (selectedEngine == "gemini_api") {
+                                                    putString("gemini_api_key", apiKeyInput.trim())
+                                                }
+                                            }.apply()
+                                            Toast.makeText(context, "Engine settings updated! Retrying...", Toast.LENGTH_SHORT).show()
                                             viewModel.resetResults()
                                             viewModel.evaluateQuest(onDismiss)
-                                        },
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Text("Switch to Cloud Server & Retry")
-                                    }
-                                }
-
-                                if (currentEngine != "gemini_api" && !showApiKeyInput) {
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Button(
-                                        onClick = {
-                                            if (storedApiKey.isNotBlank()) {
-                                                settingsSp.edit().putString("validation_engine", "gemini_api").apply()
-                                                Toast.makeText(context, "Switched to Gemini API! Retrying...", Toast.LENGTH_SHORT).show()
-                                                viewModel.resetResults()
-                                                viewModel.evaluateQuest(onDismiss)
-                                            } else {
-                                                showApiKeyInput = true
-                                            }
-                                        },
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Text("Switch to Private Gemini API Key & Retry")
-                                    }
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("Save & Retry Validation")
                                 }
                             }
                             Spacer(modifier = Modifier.height(8.dp))
