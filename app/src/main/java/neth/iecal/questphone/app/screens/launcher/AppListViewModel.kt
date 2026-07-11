@@ -183,7 +183,11 @@ class AppListViewModel @Inject constructor(
         if (
             AppBlockerServiceInfo.appBlockerService == null
         ) {
-            startForegroundService(context, Intent(context, AppBlockerService::class.java))
+            try {
+                startForegroundService(context, Intent(context, AppBlockerService::class.java))
+            } catch (e: Exception) {
+                Log.e("AppListViewModel", "Failed to start AppBlockerService: ${e.message}")
+            }
         }
 
         val cooldownTime =  cooldownInMins * 60_000L

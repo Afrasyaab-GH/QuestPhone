@@ -124,7 +124,11 @@ class MainActivity : FragmentActivity() {
                 Log.d("onboard", isUserOnboarded.value.toString())
 
                 if(isUserOnboarded.value){
-                    startForegroundService(Intent(this@MainActivity, AppBlockerService::class.java))
+                    try {
+                        startForegroundService(Intent(this@MainActivity, AppBlockerService::class.java))
+                    } catch (e: Exception) {
+                        Log.e("MainActivity", "Failed to start AppBlockerService: ${e.message}")
+                    }
                 }
 
                 notificationScheduler.createNotificationChannel()
