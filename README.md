@@ -1,5 +1,10 @@
 # QuestPhone
 
+> [!NOTE]
+> **Fork Information**: This `main` branch is a customized, lightweight fork of QuestPhone. It has been stripped of default server, cloud sync, and backend integrations to allow for streamlined, private offline experimentation and local improvements.
+> 
+> If you are looking for the full project codebase containing the clean, fully-featured, and upstream-compatible contribution set (including parallel sync fixes, AppBlockerService battery optimizations, and the inline engine selection UI), please refer to the **[clean-pr](https://github.com/Afrasyaab-GH/QuestPhone/tree/clean-pr)** branch.
+
 **QuestPhone** is a powerful, open-source Android productivity utility and minimal launcher designed to help users combat screen addiction by gamifying habit-forming and app-blocking workflows. Distracting apps remain blocked until you successfully complete your real-life quests.
 
 > [!CAUTION]
