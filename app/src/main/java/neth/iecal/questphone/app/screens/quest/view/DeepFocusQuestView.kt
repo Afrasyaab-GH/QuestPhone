@@ -123,7 +123,11 @@ class DeepFocusQuestViewVM @Inject constructor(questRepository: QuestRepository,
         isTimerActive.value = true
 
         if(!AppBlockerServiceInfo.isUsingAccessibilityService && AppBlockerServiceInfo.appBlockerService==null){
-            startForegroundService(application,Intent(application, AppBlockerService::class.java))
+            try {
+                startForegroundService(application,Intent(application, AppBlockerService::class.java))
+            } catch (e: Exception) {
+                Log.e("DeepFocusQuestView", "Failed to start AppBlockerService: ${e.message}")
+            }
         }
         // Clear any existing data and set fresh start time
         prefs.edit {

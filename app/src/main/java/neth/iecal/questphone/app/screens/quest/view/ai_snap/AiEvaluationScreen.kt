@@ -14,6 +14,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -94,9 +96,11 @@ fun AiEvaluationScreen(
         }
     }
 
+    val scrollState = rememberScrollState()
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(scrollState)
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
@@ -386,7 +390,7 @@ fun ScanningImageCard(
 
     Box(
         modifier = modifier
-            .size(250.dp)
+            .size(180.dp)
     ) {
         // Main Image
         Card(

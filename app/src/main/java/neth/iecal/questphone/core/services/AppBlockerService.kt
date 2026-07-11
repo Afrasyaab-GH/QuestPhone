@@ -14,6 +14,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+import android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
 import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
@@ -69,9 +70,11 @@ class AppBlockerService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(NOTIFICATION_ID, createNotification(),FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-        }else{
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(NOTIFICATION_ID, createNotification(), FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIFICATION_ID, createNotification(), FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        } else {
             startForeground(NOTIFICATION_ID, createNotification())
         }
         Log.d(TAG, "AppBlockService onCreate")
@@ -726,9 +729,11 @@ class AppBlockerService : Service() {
 
     private fun cancelTimerNotification() {
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                startForeground(NOTIFICATION_ID, createNotification(),FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-            }else{
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(NOTIFICATION_ID, createNotification(), FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(NOTIFICATION_ID, createNotification(), FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+            } else {
                 startForeground(NOTIFICATION_ID, createNotification())
             }
             Log.d("AppBlockerService", "Notification cancelled")

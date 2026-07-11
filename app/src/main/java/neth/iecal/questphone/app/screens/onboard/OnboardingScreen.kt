@@ -170,7 +170,11 @@ fun OnBoarderView(navController: NavHostController) {
         OnBoarderView(
             viewModel,
             onFinishOnboarding = {
-                startForegroundService(context, Intent(context, AppBlockerService::class.java))
+                try {
+                    startForegroundService(context, Intent(context, AppBlockerService::class.java))
+                } catch (e: Exception) {
+                    android.util.Log.e("OnboardingScreen", "Failed to start AppBlockerService: ${e.message}")
+                }
                 val data = context.getSharedPreferences("onboard", MODE_PRIVATE)
                 data.edit { putBoolean("onboard", true) }
                 val intent = Intent(context, MainActivity::class.java)
