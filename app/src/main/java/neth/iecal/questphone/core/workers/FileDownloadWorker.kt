@@ -224,6 +224,11 @@ class FileDownloadWorker(
             putString("version_$modelId", version)
             remove("downloading")
         }
+        if (isOneShotModel) {
+            applicationContext.getSharedPreferences("private_settings", Context.MODE_PRIVATE).edit()
+                .putString("validation_engine", "local")
+                .apply()
+        }
     }
 
     private fun updateSharedPrefsOnFailure() {

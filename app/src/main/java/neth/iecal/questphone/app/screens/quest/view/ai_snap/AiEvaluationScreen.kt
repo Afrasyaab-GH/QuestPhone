@@ -193,48 +193,77 @@ fun AiEvaluationScreen(
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                             )
-                            if (!isSuccess && results?.reason?.contains("Gemini API Key", ignoreCase = true) == true) {
-                                var apiKeyInput by remember { mutableStateOf("") }
+                            if (!isSuccess) {
+                                val settingsSp = context.getSharedPreferences("private_settings", android.content.Context.MODE_PRIVATE)
+                                val currentEngine = settingsSp.getString("validation_engine", "cloud") ?: "cloud"
+                                val storedApiKey = settingsSp.getString("gemini_api_key", "") ?: ""
+
+                                var showApiKeyInput by remember { mutableStateOf(storedApiKey.isBlank() || results?.reason?.contains("Gemini API Key", ignoreCase = true) == true) }
+                                var apiKeyInput by remember { mutableStateOf(storedApiKey) }
+
                                 Spacer(modifier = Modifier.height(12.dp))
-                                OutlinedTextField(
-                                    value = apiKeyInput,
-                                    onValueChange = { apiKeyInput = it },
-                                    label = { Text("Enter Gemini API Key") },
-                                    singleLine = true,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Button(
-                                    onClick = {
-                                        if (apiKeyInput.isNotBlank()) {
-                                            val sp = context.getSharedPreferences("private_settings", android.content.Context.MODE_PRIVATE)
-                                            sp.edit().putString("gemini_api_key", apiKeyInput.trim()).apply()
-                                            Toast.makeText(context, "API Key Saved! Retrying...", Toast.LENGTH_SHORT).show()
+
+                                if (showApiKeyInput) {
+                                    OutlinedTextField(
+                                        value = apiKeyInput,
+                                        onValueChange = { apiKeyInput = it },
+                                        label = { Text("Enter Gemini API Key") },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Button(
+                                        onClick = {
+                                            if (apiKeyInput.isNotBlank()) {
+                                                settingsSp.edit()
+                                                    .putString("gemini_api_key", apiKeyInput.trim())
+                                                    .putString("validation_engine", "gemini_api")
+                                                    .apply()
+                                                Toast.makeText(context, "API Key Saved & Switched! Retrying...", Toast.LENGTH_SHORT).show()
+                                                viewModel.resetResults()
+                                                viewModel.evaluateQuest(onDismiss)
+                                            } else {
+                                                Toast.makeText(context, "Please enter a valid key", Toast.LENGTH_SHORT).show()
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text("Save Key & Retry")
+                                    }
+                                }
+
+                                if (currentEngine != "cloud") {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Button(
+                                        onClick = {
+                                            settingsSp.edit().putString("validation_engine", "cloud").apply()
+                                            Toast.makeText(context, "Switched to Cloud Server! Retrying...", Toast.LENGTH_SHORT).show()
                                             viewModel.resetResults()
                                             viewModel.evaluateQuest(onDismiss)
-                                        } else {
-                                            Toast.makeText(context, "Please enter a valid key", Toast.LENGTH_SHORT).show()
-                                        }
-                                    },
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text("Save Key & Retry")
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text("Switch to Cloud Server & Retry")
+                                    }
                                 }
-                            }
-                            val settingsSp = context.getSharedPreferences("private_settings", android.content.Context.MODE_PRIVATE)
-                            val currentEngine = settingsSp.getString("validation_engine", "cloud") ?: "cloud"
-                            if (!isSuccess && currentEngine != "cloud") {
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Button(
-                                    onClick = {
-                                        settingsSp.edit().putString("validation_engine", "cloud").apply()
-                                        Toast.makeText(context, "Switched to Cloud Server! Retrying...", Toast.LENGTH_SHORT).show()
-                                        viewModel.resetResults()
-                                        viewModel.evaluateQuest(onDismiss)
-                                    },
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text("Switch to Cloud Server & Retry")
+
+                                if (currentEngine != "gemini_api" && !showApiKeyInput) {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Button(
+                                        onClick = {
+                                            if (storedApiKey.isNotBlank()) {
+                                                settingsSp.edit().putString("validation_engine", "gemini_api").apply()
+                                                Toast.makeText(context, "Switched to Gemini API! Retrying...", Toast.LENGTH_SHORT).show()
+                                                viewModel.resetResults()
+                                                viewModel.evaluateQuest(onDismiss)
+                                            } else {
+                                                showApiKeyInput = true
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text("Switch to Private Gemini API Key & Retry")
+                                    }
                                 }
                             }
                             Spacer(modifier = Modifier.height(8.dp))

@@ -184,6 +184,13 @@ fun ModelDownloadDialog(
                                                     putString("selected_one_shot_model", model.id)
                                                 }
                                                 currentModel = model.id
+
+                                                val privateSp = context.getSharedPreferences("private_settings", Context.MODE_PRIVATE)
+                                                privateSp.edit().putString(
+                                                    "validation_engine",
+                                                    if (model.isOnline) "cloud" else "local"
+                                                ).apply()
+                                                Toast.makeText(context, "AI engine switched to ${if (model.isOnline) "Cloud Server" else "Local AI"}", Toast.LENGTH_SHORT).show()
                                             } else {
                                                 sp.edit(commit = true) {
                                                     putString("downloading", model.id)
